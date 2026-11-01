@@ -140,6 +140,18 @@ header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgb
 .conn-btn:hover{background:var(--maroon);color:#fff}
 .conn-note{margin-top:9px;font-size:.84rem;line-height:1.5;color:var(--maroon-deep)}
 .conn-note[hidden]{display:none}
+.conn-pill{flex:none;font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;font-weight:500;border-radius:999px;padding:3px 10px;border:1px solid var(--line);color:var(--ink-soft);background:var(--card)}
+.conn-pill.ok{color:var(--live-deep);border-color:rgba(62,122,78,.45);background:rgba(62,122,78,.08)}
+.conn-pill.sample{color:#8A5A12;border-color:rgba(190,140,40,.5);background:rgba(230,180,80,.14)}
+.conn-form{margin-top:11px}
+.conn-form[hidden]{display:none}
+.conn-error{margin-top:9px;font-size:.84rem;line-height:1.5;color:var(--maroon-deep)}
+.conn-error[hidden]{display:none}
+.conn-detail[hidden]{display:none}
+.embed-box{margin-top:8px;border:1px solid var(--line);border-radius:10px;background:var(--ivory);padding:10px 12px;overflow-x:auto}
+.embed-box code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.74rem;line-height:1.5;color:var(--ink);white-space:nowrap}
+.copy-ok{margin-left:9px;font-size:.82rem;color:var(--live-deep)}
+.copy-ok[hidden]{display:none}
 .prod-row{display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid var(--line)}
 .prod-row:last-of-type{border-bottom:none}
 .prod-name{flex:1;min-width:0;font-size:.9rem;line-height:1.35;color:var(--ink)}
@@ -415,32 +427,39 @@ header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgb
       <div class="os-title">Connections</div>
       <p class="os-sub">All doors in one place — messages from the website, Instagram, WhatsApp and Facebook all get answered by this one assistant.</p>
 
-      <div class="conn-card">
-        <div class="conn-top"><span class="conn-name">Instagram</span><span class="status-chip">Not connected</span></div>
-        <p class="conn-line">The owner logs in with their own account and grants permission once — just like the Muse app.</p>
-        <button class="conn-btn" type="button" data-conn-btn>Connect</button>
-        <p class="conn-note" hidden>Connections are off in this demo — in the live system they connect with the owner's login.</p>
+      <div class="conn-card" id="connWebsiteRow">
+        <div class="conn-top"><span class="conn-name">Website</span><span class="conn-pill sample" id="websitePill">Sample data</span></div>
+        <p class="conn-line" id="websiteDesc">The assistant's chat window on the shop's own website. Right now it is running on the built-in Rafa Collection sample.</p>
+        <div class="conn-form" id="websiteForm" hidden>
+          <input class="login-input" id="websiteUrl" type="url" placeholder="https://yourshop.com" autocomplete="off" spellcheck="false">
+          <button class="test-open-btn" id="websiteGo" type="button">Connect website</button>
+          <p class="conn-error" id="websiteError" hidden></p>
+        </div>
+        <div class="conn-detail" id="websiteDetail" hidden>
+          <p class="conn-line" id="websiteMeta"></p>
+          <p class="conn-line">Add this line to your website and the assistant's chat window will open on it:</p>
+          <div class="embed-box"><code id="embedCode"></code></div>
+          <button class="conn-btn" id="copyEmbedBtn" type="button">Copy code</button><span class="copy-ok" id="copyOk" hidden>Copied ✓</span>
+        </div>
+        <button class="conn-btn" id="websiteBtn" type="button">Connect</button>
       </div>
 
       <div class="conn-card">
-        <div class="conn-top"><span class="conn-name">WhatsApp</span><span class="status-chip">Not connected</span></div>
-        <p class="conn-line">The official WhatsApp Business number is verified through Meta — shortcuts can get the number banned, so only the official route.</p>
-        <button class="conn-btn" type="button" data-conn-btn>Connect</button>
-        <p class="conn-note" hidden>Connections are off in this demo — in the live system they connect with the owner's login.</p>
+        <div class="conn-top"><span class="conn-name">Instagram</span><span class="conn-pill">Not connected</span></div>
+        <p class="conn-line">Customer direct messages on Instagram, answered by this assistant.</p>
+        <button class="conn-btn" type="button" data-meta-btn="Instagram">Connect</button>
       </div>
 
       <div class="conn-card">
-        <div class="conn-top"><span class="conn-name">Facebook</span><span class="status-chip">Not connected</span></div>
-        <p class="conn-line">The owner logs in with their own account and grants permission once — just like the Muse app.</p>
-        <button class="conn-btn" type="button" data-conn-btn>Connect</button>
-        <p class="conn-note" hidden>Connections are off in this demo — in the live system they connect with the owner's login.</p>
+        <div class="conn-top"><span class="conn-name">Facebook</span><span class="conn-pill">Not connected</span></div>
+        <p class="conn-line">Messages on the shop's Facebook Page, answered by this assistant.</p>
+        <button class="conn-btn" type="button" data-meta-btn="Facebook">Connect</button>
       </div>
 
       <div class="conn-card">
-        <div class="conn-top"><span class="conn-name">Website</span><span class="status-chip">Not connected</span></div>
-        <p class="conn-line">A chat window is added to the shop's website — no permission needed.</p>
-        <button class="conn-btn" type="button" data-conn-btn>Connect</button>
-        <p class="conn-note" hidden>Connections are off in this demo — in the live system they connect with the owner's login.</p>
+        <div class="conn-top"><span class="conn-name">WhatsApp</span><span class="conn-pill">Not connected</span></div>
+        <p class="conn-line">Customer chats on the shop's WhatsApp Business number, answered by this assistant.</p>
+        <button class="conn-btn" type="button" data-meta-btn="WhatsApp">Connect</button>
       </div>
     </div>
 
@@ -459,6 +478,7 @@ header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgb
         <span class="sync-meta" id="syncMeta">Last synced: not yet — showing the saved snapshot</span>
         <button class="sync-btn" id="syncBtn" type="button">🔄 Sync now</button>
       </div>
+      <p class="sync-meta" id="catalogSource"></p>
       <p class="sync-note" id="syncNote" hidden>Sync failed — the previous catalogue is still in use.</p>
       <div id="catalogList"></div>
     </div>
@@ -675,10 +695,97 @@ var SHOP = {
    SEED_PRODUCTS snapshot is the fallback when nothing has synced yet. */
 var CATALOG_KEY = "rafa_products_v1";
 var FEED_URL = "https://www.rafacollection.com/products.json?limit=100";
+var DEFAULT_SHOP_BASE = "https://www.rafacollection.com";
+var CONNECTIONS_KEY = "rafa_connections";
 var MAX_CATALOG = 40;
 var _store = null;
 try { if (typeof localStorage !== "undefined") _store = localStorage; } catch(e){ _store = null; }
 function setStorage(s){ _store = s; }
+
+/* ================= CONNECTIONS (the shop's own channels) =================
+   Stored under rafa_connections (rides the account cloud sync like the
+   catalogue does). The website connection is real: its URL becomes the
+   catalogue's sync source. No connection = the built-in Rafa sample. */
+function getConnections(){
+  if (!_store) return {};
+  try {
+    var raw = _store.getItem(CONNECTIONS_KEY);
+    if (!raw) return {};
+    var p = JSON.parse(raw);
+    return (p && typeof p === "object" && !Array.isArray(p)) ? p : {};
+  } catch(e){ return {}; }
+}
+function saveConnections(c){
+  if (_store){ try { _store.setItem(CONNECTIONS_KEY, JSON.stringify(c || {})); } catch(e){} }
+}
+function getWebsiteConn(){
+  var w = getConnections().website;
+  if (!w || typeof w.url !== "string" || !w.url) return null;
+  return w;
+}
+function saveWebsiteConn(conn){
+  var c = getConnections();
+  c.website = conn;
+  saveConnections(c);
+}
+function clearWebsiteConn(){
+  var c = getConnections();
+  delete c.website;
+  saveConnections(c);
+}
+function domainOf(url){
+  try { return new URL(String(url || "")).hostname; } catch(e){ return String(url || ""); }
+}
+function shopBase(){
+  var w = getWebsiteConn();
+  return w ? w.url : DEFAULT_SHOP_BASE;
+}
+function shopDomain(){ return domainOf(shopBase()); }
+function feedUrl(){ return shopBase() + "/products.json?limit=100"; }
+/* Normalise whatever the owner typed into a shop origin, or null. */
+function normalizeShopUrl(raw){
+  var s = String(raw == null ? "" : raw).trim();
+  if (!s) return null;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) s = "https://" + s;
+  var u;
+  try { u = new URL(s); } catch(e){ return null; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  if (!u.hostname || u.hostname.indexOf(".") < 0) return null;
+  return u.origin;
+}
+function feedVendor(data){
+  if (!data || !Array.isArray(data.products)) return "";
+  for (var i = 0; i < data.products.length; i++){
+    var v = data.products[i] && data.products[i].vendor;
+    if (v) return String(v);
+  }
+  return "";
+}
+/* Validate a shop for website-connect: fetch its public Shopify feed and
+   require a parseable product list. Resolves {ok:true, url, shopName,
+   productCount, products} or {ok:false} — never throws. */
+function validateShop(fetchFn, rawUrl){
+  var base = normalizeShopUrl(rawUrl);
+  if (!base) return Promise.resolve({ ok: false });
+  var f = fetchFn || (typeof fetch !== "undefined" ? fetch : null);
+  if (!f) return Promise.resolve({ ok: false });
+  var attempt;
+  try { attempt = f(base + "/products.json"); } catch(e){ return Promise.resolve({ ok: false }); }
+  return Promise.resolve(attempt).then(function(res){
+    if (!res || !res.ok) throw new Error("shop http");
+    return res.json();
+  }).then(function(data){
+    var products = parseFeed(data, base);
+    if (!products) throw new Error("shop shape");
+    return {
+      ok: true,
+      url: base,
+      shopName: feedVendor(data) || domainOf(base),
+      productCount: products.length,
+      products: products
+    };
+  }).catch(function(){ return { ok: false }; });
+}
 function formatPrice(v){
   var d = String(v == null ? "" : v).replace(/\D/g, "");
   if (!d) return "";
@@ -692,7 +799,7 @@ function validStoredCatalog(arr){
     var p = arr[i];
     if (!p || typeof p.name !== "string" || !p.name) return false;
     if (typeof p.price !== "string" || !p.price) return false;
-    if (typeof p.url !== "string" || p.url.indexOf("https://www.rafacollection.com/products/") !== 0) return false;
+    if (typeof p.url !== "string" || p.url.indexOf(shopBase() + "/products/") !== 0) return false;
   }
   return true;
 }
@@ -730,7 +837,7 @@ function getCatalogState(){
 function getCatalog(){ return getCatalogState().products; }
 /* Build a catalogue from a Shopify products.json payload. Only the feed's
    own shape is trusted: title + handle + a numeric first-variant price. */
-function parseFeed(data){
+function parseFeed(data, base){
   if (!data || !Array.isArray(data.products)) return null;
   var out = [];
   for (var i = 0; i < data.products.length && out.length < MAX_CATALOG; i++){
@@ -744,7 +851,7 @@ function parseFeed(data){
       name: String(p.title),
       price: formatPrice(String(num)),
       cat: p.product_type ? String(p.product_type) : "Collection",
-      url: "https://www.rafacollection.com/products/" + p.handle,
+      url: (base || shopBase()) + "/products/" + p.handle,
       available: v.available !== false
     });
   }
@@ -757,7 +864,7 @@ function syncCatalog(fetchFn){
   var f = fetchFn || (typeof fetch !== "undefined" ? fetch : null);
   if (!f) return Promise.resolve({ ok: false });
   var attempt;
-  try { attempt = f(FEED_URL); } catch(e){ return Promise.resolve({ ok: false }); }
+  try { attempt = f(feedUrl()); } catch(e){ return Promise.resolve({ ok: false }); }
   return Promise.resolve(attempt).then(function(res){
     if (!res || !res.ok) throw new Error("feed http");
     return res.json();
@@ -1784,6 +1891,10 @@ function buildSystemPrompt(){
 var RafaLogic = {
   PRODUCTS: SEED_PRODUCTS, SEED_PRODUCTS: SEED_PRODUCTS, CATEGORIES: CATEGORIES, SHOP: SHOP,
   CATALOG_KEY: CATALOG_KEY, FEED_URL: FEED_URL,
+  CONNECTIONS_KEY: CONNECTIONS_KEY, getConnections: getConnections,
+  getWebsiteConn: getWebsiteConn, saveWebsiteConn: saveWebsiteConn, clearWebsiteConn: clearWebsiteConn,
+  shopBase: shopBase, shopDomain: shopDomain, feedUrl: feedUrl,
+  normalizeShopUrl: normalizeShopUrl, validateShop: validateShop,
   getCatalog: getCatalog, getCatalogState: getCatalogState, parseFeed: parseFeed, syncCatalog: syncCatalog,
   setStorage: setStorage, formatPrice: formatPrice,
   demoRespond: demoRespond, buildSystemPrompt: buildSystemPrompt,
@@ -2243,7 +2354,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
     faceCustomer.hidden = which !== "test";
     faceDashboard.hidden = which !== "dashboard";
     faceAccount.hidden = which !== "account";
-    if (which === "owner"){ renderCatalog(); renderReport(); }
+    if (which === "owner"){ renderWebsiteConn(); renderCatalog(); renderReport(); }
     else if (which === "test"){ scrollDown(); }
     else if (which === "dashboard"){ renderDashboard(); }
   }
@@ -2391,6 +2502,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
   var sheetCancel = document.getElementById("sheetCancel");
   var sheetAction = null;
   function openSheet(title, text, confirmLabel, action){
+    sheetCancel.hidden = false;
     sheetTitle.textContent = title;
     sheetText.textContent = text;
     sheetConfirm.textContent = confirmLabel;
@@ -2618,7 +2730,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
      users/{uid}/state/main) uski account-wali tijori hai. Cloud mile to wahi
      sach; cloud na mile to bhi app kabhi rukta ya error nahi dikhata. */
   var OWNER_UID_KEY = "rafa_owner_uid";
-  var SYNC_KEYS = [ASSIST_KEY, L.SALE_KEY, L.DAILY_KEY, L.CLICKS_KEY, L.DEMAND_KEY, L.CATALOG_KEY];
+  var SYNC_KEYS = [ASSIST_KEY, L.SALE_KEY, L.DAILY_KEY, L.CLICKS_KEY, L.DEMAND_KEY, L.CATALOG_KEY, L.CONNECTIONS_KEY];
   var syncActive = false, syncApplying = false, cloudDirty = false, cloudSaveTimer = null;
   var syncStatusEl = document.getElementById("syncStatus");
   var syncTimeEl = document.getElementById("syncTime");
@@ -2649,6 +2761,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
     var c = readLocalVal(L.CLICKS_KEY); if (c != null) st[L.CLICKS_KEY] = c;
     var u = readLocalVal(L.DEMAND_KEY); if (u != null) st[L.DEMAND_KEY] = u;
     var cat = readLocalVal(L.CATALOG_KEY); if (cat != null) st.catalog = cat;
+    var cn = readLocalVal(L.CONNECTIONS_KEY); if (cn != null) st.connections = cn;
     return st;
   }
   function writeLocalVal(key, val){
@@ -2666,6 +2779,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
     writeLocalVal(L.CLICKS_KEY, cloud[L.CLICKS_KEY]);
     writeLocalVal(L.DEMAND_KEY, cloud[L.DEMAND_KEY]);
     writeLocalVal(L.CATALOG_KEY, cloud.catalog);
+    writeLocalVal(L.CONNECTIONS_KEY, cloud.connections);
   }
   function scheduleCloudSave(){
     if (!syncActive || syncApplying || !currentUser) return;
@@ -2741,13 +2855,113 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
     if (cloudSaveTimer){ clearTimeout(cloudSaveTimer); cloudSaveTimer = null; }
   }
 
-  /* connections: demo — the button only reveals the honest note, no state changes */
-  Array.prototype.forEach.call(document.querySelectorAll("[data-conn-btn]"), function(btn){
-    btn.addEventListener("click", function(){
-      var note = btn.parentElement.querySelector(".conn-note");
-      if (note) note.hidden = false;
+  /* ================= CONNECTIONS — Muse-style channel list =================
+     The Website connection is REAL: the shop's own site becomes the
+     catalogue's sync source and gets the chat widget (embed code below).
+     Instagram / Facebook / WhatsApp connect through Meta's official login
+     once the ABSO Meta app is ready — their Connect buttons open a sheet
+     that says exactly that. No fake states anywhere. */
+  var websitePill = document.getElementById("websitePill");
+  var websiteDesc = document.getElementById("websiteDesc");
+  var websiteBtn = document.getElementById("websiteBtn");
+  var websiteForm = document.getElementById("websiteForm");
+  var websiteUrlEl = document.getElementById("websiteUrl");
+  var websiteGo = document.getElementById("websiteGo");
+  var websiteError = document.getElementById("websiteError");
+  var websiteDetail = document.getElementById("websiteDetail");
+  var websiteMeta = document.getElementById("websiteMeta");
+  var embedCode = document.getElementById("embedCode");
+  var copyEmbedBtn = document.getElementById("copyEmbedBtn");
+  var copyOk = document.getElementById("copyOk");
+  var websiteFormOpen = false;
+
+  function embedSnippet(url){
+    return '<script src="https://rafa-assistant.vercel.app/widget.js" data-site="' + url + '"><\/script>';
+  }
+  function renderWebsiteConn(){
+    var conn = L.getWebsiteConn();
+    websiteError.hidden = true;
+    if (conn){
+      websitePill.textContent = "Connected";
+      websitePill.className = "conn-pill ok";
+      websiteDesc.textContent = "The assistant's chat window on the shop's own website — the catalogue now syncs from " + L.shopDomain() + ".";
+      websiteMeta.textContent = (conn.shopName || L.shopDomain()) + " • " + (conn.productCount || 0) + " products • Connected " + (conn.connectedAt ? fmtSyncTime(conn.connectedAt) : "");
+      embedCode.textContent = embedSnippet(conn.url);
+      websiteDetail.hidden = false;
+      websiteForm.hidden = true;
+      websiteFormOpen = false;
+      websiteBtn.textContent = "Disconnect";
+    } else {
+      websitePill.textContent = "Sample data";
+      websitePill.className = "conn-pill sample";
+      websiteDesc.textContent = "The assistant's chat window on the shop's own website. Right now it is running on the built-in Rafa Collection sample.";
+      websiteDetail.hidden = true;
+      websiteForm.hidden = !websiteFormOpen;
+      websiteBtn.textContent = websiteFormOpen ? "Cancel" : "Connect";
+    }
+  }
+  websiteBtn.addEventListener("click", function(){
+    if (L.getWebsiteConn()){
+      /* disconnect: the connection clears and the catalogue source returns
+         to the Rafa sample (stored catalogue dropped, seed comes back) */
+      L.clearWebsiteConn();
+      try { localStorage.removeItem(L.CATALOG_KEY); } catch(e){}
+      websiteFormOpen = false;
+      renderWebsiteConn();
+      renderCatalog();
+      doSync();
+      return;
+    }
+    websiteFormOpen = !websiteFormOpen;
+    websiteError.hidden = true;
+    renderWebsiteConn();
+    if (websiteFormOpen && websiteUrlEl.focus) websiteUrlEl.focus();
+  });
+  websiteGo.addEventListener("click", function(){
+    if (websiteGo.disabled) return;
+    websiteError.hidden = true;
+    setBusy(websiteGo, true, "Checking…");
+    L.validateShop(null, websiteUrlEl.value).then(function(res){
+      setBusy(websiteGo, false);
+      if (res.ok){
+        L.saveWebsiteConn({ url: res.url, shopName: res.shopName, productCount: res.productCount, connectedAt: Date.now() });
+        websiteFormOpen = false;
+        renderWebsiteConn();
+        doSync(); /* the catalogue now syncs from the connected site */
+      } else {
+        websiteError.textContent = "This site could not be read automatically — right now auto-connect works with Shopify stores. Check the address and try again.";
+        websiteError.hidden = false;
+      }
     });
   });
+  copyEmbedBtn.addEventListener("click", function(){
+    var text = embedCode.textContent;
+    function done(){ copyOk.hidden = false; setTimeout(function(){ copyOk.hidden = true; }, 2500); }
+    function fallbackCopy(t){
+      try {
+        var ta = document.createElement("textarea");
+        ta.value = t;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch(e){}
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(function(){ fallbackCopy(text); done(); });
+    } else { fallbackCopy(text); done(); }
+  });
+  function openInfoSheet(title, text){
+    openSheet(title, text, "OK", function(){ closeSheet(); });
+    sheetCancel.hidden = true;
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("[data-meta-btn]"), function(btn){
+    btn.addEventListener("click", function(){
+      openInfoSheet(btn.getAttribute("data-meta-btn"),
+        "This connection opens Meta's official login. It will switch on here as soon as the ABSO Meta app is ready — the shop owner will log in with their own account, exactly like connecting an account in Muse.");
+    });
+  });
+  renderWebsiteConn();
 
   /* catalog: read-only, auto-synced from the shop's website feed */
   var catalogList = document.getElementById("catalogList");
@@ -2760,6 +2974,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
   }
   function renderCatalog(){
     var st = L.getCatalogState();
+    document.getElementById("catalogSource").textContent = "Source: " + L.shopDomain();
     syncMeta.textContent = "Last synced: " + (st.syncedAt ? fmtSyncTime(st.syncedAt) : "not yet — showing the saved snapshot");
     catalogList.innerHTML = "";
     st.products.forEach(function(p){

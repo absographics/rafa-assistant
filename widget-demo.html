@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Shop — website connection demo</title>
+<style>
+  body{font-family:Georgia,'Times New Roman',serif;background:#F5F0E9;color:#1C1A17;margin:0}
+  header{background:#6E1423;color:#fff;padding:26px 20px;text-align:center}
+  header h1{margin:0;font-size:1.7rem;font-weight:600}
+  header p{margin:6px 0 0;font-size:.95rem;opacity:.85}
+  main{max-width:640px;margin:0 auto;padding:28px 20px 60px;line-height:1.65}
+  .card{background:#fff;border:1px solid rgba(28,26,23,.13);border-radius:14px;padding:18px 20px;margin-top:16px}
+  .card h2{margin:0 0 6px;font-size:1.15rem}
+  .card p{margin:0;font-size:.97rem}
+  code{background:#F5F0E9;padding:1px 6px;border-radius:6px;font-size:.85em}
+</style>
+</head>
+<body>
+<header>
+  <h1>Test Shop</h1>
+  <p>A plain stand-in shop page — for trying the website connection end-to-end</p>
+</header>
+<main>
+  <p>This page pretends to be a shop's website. The chat widget in the bottom-right
+     corner is the assistant's <b>Website</b> connection — the same widget a shop
+     gets from the owner app's Connections section.</p>
+
+  <div class="card">
+    <h2>Try it</h2>
+    <p>Tap <b>💬 Chat</b> and ask things a customer would ask:</p>
+    <p>• “Farshi suit ka price kya hai?”<br>
+       • “Show me the price list”<br>
+       • “COD available hai?”<br>
+       • “How do I order?”</p>
+    <p>The answers come from the connected shop's own live catalogue
+       (<code>rafacollection.com</code> in this demo) — prices are never typed by hand.</p>
+  </div>
+
+  <div class="card">
+    <h2>How a real shop gets this</h2>
+    <p>The owner connects their website in the assistant app, copies one line of
+       code into their site, and this chat window appears — connected to the
+       assistant's backend, answering every visitor.</p>
+  </div>
+</main>
+
+<script src="widget.js" data-site="https://www.rafacollection.com" data-name="Rafa Collection"></script>
+</body>
+</html>
