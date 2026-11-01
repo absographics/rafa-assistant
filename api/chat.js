@@ -10,7 +10,7 @@
    No dependencies.
 
    AI brain: replies come from an AI provider with the live catalogue
-   as the only price source — Gemini (gemini-2.5-flash) when the
+   as the only price source — Gemini (gemini-3.0-flash) when the
    GEMINI_API_KEY env var is set, otherwise Groq (llama-3.3-70b-versatile)
    when GROQ_API_KEY is set. Both expose an OpenAI-compatible endpoint.
    If no key is set, or the AI call errors or times out, the
@@ -20,7 +20,7 @@
 
 var CACHE = {};
 var GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-var GEMINI_MODEL = "gemini-2.5-flash";
+var GEMINI_MODEL = "gemini-3.0-flash";
 var GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 var GROQ_MODEL = "llama-3.3-70b-versatile";
 var AI_TIMEOUT_MS = 12000;
