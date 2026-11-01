@@ -33,7 +33,8 @@ var GEMINI_ATTEMPT_TIMEOUT_MS = 10000;
 var GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 var GROQ_MODEL = "llama-3.3-70b-versatile";
 var OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-var OPENROUTER_MODELS = ["google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "thinkingmachines/inkling:free"];
+var OPENROUTER_MODELS = ["google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "nvidia/nemotron-3.5-super-vl:free"];
+var OPENROUTER_RETRY_DELAY_MS = 3000;
 var AI_TIMEOUT_MS = 12000;
 var CACHE_MS = 60 * 1000;
 var FEED_LIMIT = 100;
@@ -461,7 +462,24 @@ async function openrouterAnswer(site, products, message, key) {
   return null;
 }
 
+/* Retries one model up to 3 times when the free upstream is
+   momentarily rate-limited (429) or overloaded (empty reply) —
+   the provider's own advice is "retry shortly". Waits
+   OPENROUTER_RETRY_DELAY_MS between attempts. A hard failure
+   (any other error) stops immediately. */
 async function openrouterTryModel(site, products, message, key, model) {
+  for (var attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      await new Promise(function (resolve) { setTimeout(resolve, OPENROUTER_RETRY_DELAY_MS); });
+    }
+    var r = await openrouterAttempt(site, products, message, key, model);
+    if (r && !r.retryable) return r;
+    if (!r) return null;
+  }
+  return null;
+}
+
+async function openrouterAttempt(site, products, message, key, model) {
   var f = globalThis.fetch;
   var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
   var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, AI_TIMEOUT_MS) : null;
@@ -486,7 +504,7 @@ async function openrouterTryModel(site, products, message, key, model) {
       }
       logAiFailure("openrouter", res ? res.status : null,
         "model=" + model + " " + (errBody || (res ? "provider returned an error response with no body" : "no response from provider")));
-      return null;
+      return (res && res.status === 429) ? { retryable: true } : null;
     }
     var raw = await res.text();
     var data = null;
@@ -498,7 +516,7 @@ async function openrouterTryModel(site, products, message, key, model) {
       data.choices[0].message.content;
     if (!text || !String(text).trim()) {
       logAiFailure("openrouter", res.status, "model=" + model + " empty reply in response body: " + raw);
-      return null;
+      return { retryable: true }; /* upstream overload returns 200 with an error body — retry shortly */
     }
     text = String(text).trim();
     var mentioned = [];
@@ -522,6 +540,13 @@ async function openrouterTryModel(site, products, message, key, model) {
    key is set or every provider fails — the caller then uses the
    deterministic responder. Never throws. */
 async function aiAnswer(site, products, message) {
+  /* OpenRouter first: it is the provider that actually answers
+     today (Gemini's key 403s on the free-tier block every time —
+     it stays in the chain only as a later fallback). */
+  if (process.env.OPENROUTER_API_KEY) {
+    var o = await openrouterAnswer(site, products, message, process.env.OPENROUTER_API_KEY);
+    if (o) return o;
+  }
   if (process.env.GEMINI_API_KEY) {
     var g = await geminiAnswer(site, products, message, process.env.GEMINI_API_KEY);
     if (g) return g;
@@ -529,9 +554,6 @@ async function aiAnswer(site, products, message) {
   if (process.env.GROQ_API_KEY) {
     var q = await groqAnswer(site, products, message, process.env.GROQ_API_KEY);
     if (q) return q;
-  }
-  if (process.env.OPENROUTER_API_KEY) {
-    return await openrouterAnswer(site, products, message, process.env.OPENROUTER_API_KEY);
   }
   return null; /* no key set — deterministic mode is intended, not a failure */
 }
