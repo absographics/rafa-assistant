@@ -18,7 +18,7 @@
    the OpenAI-compatible layer rejected models this key can use
    natively. Groq (llama-3.3-70b-versatile, OpenAI-compatible
    endpoint) is the second provider, used when GROQ_API_KEY is set.
-   OpenRouter (meta-llama/llama-3.3-70b-instruct:free, also
+   OpenRouter (free-model chain, also
    OpenAI-compatible) is the third, used when OPENROUTER_API_KEY is
    set — a backup for when Gemini's free tier is unavailable.
    If no key is set, or every AI attempt errors or times out, the
@@ -33,7 +33,7 @@ var GEMINI_ATTEMPT_TIMEOUT_MS = 10000;
 var GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 var GROQ_MODEL = "llama-3.3-70b-versatile";
 var OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-var OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+var OPENROUTER_MODELS = ["google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "thinkingmachines/inkling:free"];
 var AI_TIMEOUT_MS = 12000;
 var CACHE_MS = 60 * 1000;
 var FEED_LIMIT = 100;
@@ -441,17 +441,28 @@ async function groqAnswer(site, products, message, key) {
   }
 }
 
-/* OpenRouter via its OpenAI-compatible chat-completions endpoint
-   (free Llama 3.3 70B model). Third provider in the order — used
-   when OPENROUTER_API_KEY is set and the providers above it are
-   unset or have failed. Returns { reply, products } or null on any
-   failure — every failure is logged via logAiFailure. Never throws. */
+/* OpenRouter via its OpenAI-compatible chat-completions endpoint.
+   Third provider in the order — used when OPENROUTER_API_KEY is set
+   and the providers above it are unset or have failed. Tries each
+   free model in OPENROUTER_MODELS in order (free slugs get retired
+   without notice — the chain absorbs that). Returns
+   { reply, products } or null when every model failed — every
+   failure is logged via logAiFailure. Never throws. */
 async function openrouterAnswer(site, products, message, key) {
   var f = globalThis.fetch;
   if (!f) {
     logAiFailure("openrouter", null, "fetch is not available in this runtime");
     return null;
   }
+  for (var m = 0; m < OPENROUTER_MODELS.length; m++) {
+    var r = await openrouterTryModel(site, products, message, key, OPENROUTER_MODELS[m]);
+    if (r) return r;
+  }
+  return null;
+}
+
+async function openrouterTryModel(site, products, message, key, model) {
+  var f = globalThis.fetch;
   var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
   var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, AI_TIMEOUT_MS) : null;
   try {
@@ -459,7 +470,7 @@ async function openrouterAnswer(site, products, message, key) {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
       body: JSON.stringify({
-        model: OPENROUTER_MODEL,
+        model: model,
         temperature: 0.4,
         messages: [
           { role: "system", content: buildAiPrompt(site, products) },
@@ -474,19 +485,19 @@ async function openrouterAnswer(site, products, message, key) {
         try { errBody = await res.text(); } catch (e2) { errBody = ""; }
       }
       logAiFailure("openrouter", res ? res.status : null,
-        errBody || (res ? "provider returned an error response with no body" : "no response from provider"));
+        "model=" + model + " " + (errBody || (res ? "provider returned an error response with no body" : "no response from provider")));
       return null;
     }
     var raw = await res.text();
     var data = null;
     try { data = JSON.parse(raw); } catch (e3) {
-      logAiFailure("openrouter", res.status, "unparseable response body: " + raw);
+      logAiFailure("openrouter", res.status, "model=" + model + " unparseable response body: " + raw);
       return null;
     }
     var text = data && data.choices && data.choices[0] && data.choices[0].message &&
       data.choices[0].message.content;
     if (!text || !String(text).trim()) {
-      logAiFailure("openrouter", res.status, "empty reply in response body: " + raw);
+      logAiFailure("openrouter", res.status, "model=" + model + " empty reply in response body: " + raw);
       return null;
     }
     text = String(text).trim();
@@ -498,6 +509,7 @@ async function openrouterAnswer(site, products, message, key) {
   } catch (e) {
     var isTimeout = !!(e && (e.name === "AbortError" || e.code === 20));
     logAiFailure("openrouter", null,
+      "model=" + model + " " +
       (isTimeout ? "timeout after " + AI_TIMEOUT_MS + "ms — " : "") +
       ((e && e.message) || String(e)));
     return null;
