@@ -18,6 +18,9 @@
    the OpenAI-compatible layer rejected models this key can use
    natively. Groq (llama-3.3-70b-versatile, OpenAI-compatible
    endpoint) is the second provider, used when GROQ_API_KEY is set.
+   OpenRouter (meta-llama/llama-3.3-70b-instruct:free, also
+   OpenAI-compatible) is the third, used when OPENROUTER_API_KEY is
+   set — a backup for when Gemini's free tier is unavailable.
    If no key is set, or every AI attempt errors or times out, the
    deterministic responder below answers instead — the endpoint never
    breaks. GET /api/chat?health=1 -> { ai: true|false } reports only
@@ -29,6 +32,8 @@ var GEMINI_MODELS = ["gemini-flash-latest", "gemini-3.8-flash", "gemini-3.6-flas
 var GEMINI_ATTEMPT_TIMEOUT_MS = 10000;
 var GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 var GROQ_MODEL = "llama-3.3-70b-versatile";
+var OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+var OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 var AI_TIMEOUT_MS = 12000;
 var CACHE_MS = 60 * 1000;
 var FEED_LIMIT = 100;
@@ -243,7 +248,7 @@ function respond(site, products, rawMessage) {
   ), products: [] };
 }
 
-/* --------------------- AI brain (Gemini / Groq) --------------------- */
+/* ------------------ AI brain (Gemini / Groq / OpenRouter) ------------------ */
 
 function buildAiPrompt(site, products) {
   var isRafa = domainOf(site) === RAFA_DOMAIN;
@@ -273,8 +278,9 @@ function buildAiPrompt(site, products) {
 
 /* Provider order per request: Gemini (native generateContent API,
    model chain) first when GEMINI_API_KEY is set, then Groq
-   (OpenAI-compatible endpoint) when GROQ_API_KEY is set, otherwise
-   the deterministic responder. */
+   (OpenAI-compatible endpoint) when GROQ_API_KEY is set, then
+   OpenRouter (OpenAI-compatible endpoint, free model) when
+   OPENROUTER_API_KEY is set, otherwise the deterministic responder. */
 
 /* One-line failure log for the AI call path (surfaces in Vercel's
    runtime logs). Carries the provider name, the HTTP status when
@@ -435,6 +441,71 @@ async function groqAnswer(site, products, message, key) {
   }
 }
 
+/* OpenRouter via its OpenAI-compatible chat-completions endpoint
+   (free Llama 3.3 70B model). Third provider in the order — used
+   when OPENROUTER_API_KEY is set and the providers above it are
+   unset or have failed. Returns { reply, products } or null on any
+   failure — every failure is logged via logAiFailure. Never throws. */
+async function openrouterAnswer(site, products, message, key) {
+  var f = globalThis.fetch;
+  if (!f) {
+    logAiFailure("openrouter", null, "fetch is not available in this runtime");
+    return null;
+  }
+  var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, AI_TIMEOUT_MS) : null;
+  try {
+    var res = await f(OPENROUTER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        temperature: 0.4,
+        messages: [
+          { role: "system", content: buildAiPrompt(site, products) },
+          { role: "user", content: String(message) }
+        ]
+      }),
+      signal: ctrl ? ctrl.signal : undefined
+    });
+    if (!res || !res.ok) {
+      var errBody = "";
+      if (res) {
+        try { errBody = await res.text(); } catch (e2) { errBody = ""; }
+      }
+      logAiFailure("openrouter", res ? res.status : null,
+        errBody || (res ? "provider returned an error response with no body" : "no response from provider"));
+      return null;
+    }
+    var raw = await res.text();
+    var data = null;
+    try { data = JSON.parse(raw); } catch (e3) {
+      logAiFailure("openrouter", res.status, "unparseable response body: " + raw);
+      return null;
+    }
+    var text = data && data.choices && data.choices[0] && data.choices[0].message &&
+      data.choices[0].message.content;
+    if (!text || !String(text).trim()) {
+      logAiFailure("openrouter", res.status, "empty reply in response body: " + raw);
+      return null;
+    }
+    text = String(text).trim();
+    var mentioned = [];
+    for (var i = 0; i < products.length && mentioned.length < 6; i++) {
+      if (text.indexOf(products[i].url) >= 0) mentioned.push(products[i]);
+    }
+    return { reply: text, products: mentioned.map(pub) };
+  } catch (e) {
+    var isTimeout = !!(e && (e.name === "AbortError" || e.code === 20));
+    logAiFailure("openrouter", null,
+      (isTimeout ? "timeout after " + AI_TIMEOUT_MS + "ms — " : "") +
+      ((e && e.message) || String(e)));
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /* Returns { reply, products } from an AI provider, or null when no
    key is set or every provider fails — the caller then uses the
    deterministic responder. Never throws. */
@@ -444,7 +515,11 @@ async function aiAnswer(site, products, message) {
     if (g) return g;
   }
   if (process.env.GROQ_API_KEY) {
-    return await groqAnswer(site, products, message, process.env.GROQ_API_KEY);
+    var q = await groqAnswer(site, products, message, process.env.GROQ_API_KEY);
+    if (q) return q;
+  }
+  if (process.env.OPENROUTER_API_KEY) {
+    return await openrouterAnswer(site, products, message, process.env.OPENROUTER_API_KEY);
   }
   return null; /* no key set — deterministic mode is intended, not a failure */
 }
@@ -491,7 +566,7 @@ async function handler(req, res) {
   if (req.method === "OPTIONS") { res.status(204).end(); return; }
   if (req.method === "GET" && isHealthRequest(req)) {
     /* only ever reports whether the brain is on — never the key */
-    return sendJson(res, 200, { ai: !!(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY) });
+    return sendJson(res, 200, { ai: !!(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || process.env.OPENROUTER_API_KEY) });
   }
   if (req.method !== "POST") {
     return sendJson(res, 405, { reply: "This endpoint only takes POST requests.", products: [] });
