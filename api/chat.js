@@ -10,17 +10,23 @@
    No dependencies.
 
    AI brain: replies come from an AI provider with the live catalogue
-   as the only price source — Gemini (gemini-3.0-flash) when the
-   GEMINI_API_KEY env var is set, otherwise Groq (llama-3.3-70b-versatile)
-   when GROQ_API_KEY is set. Both expose an OpenAI-compatible endpoint.
-   If no key is set, or the AI call errors or times out, the
+   as the only price source. Gemini goes first when GEMINI_API_KEY is
+   set — via its native generateContent API, trying a chain of models
+   (gemini-flash-latest, gemini-3.8-flash, gemini-3.6-flash,
+   gemini-3-flash-preview — the models this account's AI Studio picker
+   actually offers), because model availability varies per key and
+   the OpenAI-compatible layer rejected models this key can use
+   natively. Groq (llama-3.3-70b-versatile, OpenAI-compatible
+   endpoint) is the second provider, used when GROQ_API_KEY is set.
+   If no key is set, or every AI attempt errors or times out, the
    deterministic responder below answers instead — the endpoint never
    breaks. GET /api/chat?health=1 -> { ai: true|false } reports only
    whether a key is set; key values are never exposed. */
 
 var CACHE = {};
-var GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-var GEMINI_MODEL = "gemini-3.0-flash";
+var GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
+var GEMINI_MODELS = ["gemini-flash-latest", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3-flash-preview"];
+var GEMINI_ATTEMPT_TIMEOUT_MS = 10000;
 var GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 var GROQ_MODEL = "llama-3.3-70b-versatile";
 var AI_TIMEOUT_MS = 12000;
@@ -265,19 +271,10 @@ function buildAiPrompt(site, products) {
   ].join("\n");
 }
 
-/* Provider chosen per request: Gemini when GEMINI_API_KEY is set,
-   otherwise Groq when GROQ_API_KEY is set, otherwise null. Both
-   providers expose an OpenAI-compatible chat-completions endpoint,
-   so one call path serves both. */
-function pickProvider() {
-  if (process.env.GEMINI_API_KEY) {
-    return { name: "gemini", url: GEMINI_URL, model: GEMINI_MODEL, key: process.env.GEMINI_API_KEY };
-  }
-  if (process.env.GROQ_API_KEY) {
-    return { name: "groq", url: GROQ_URL, model: GROQ_MODEL, key: process.env.GROQ_API_KEY };
-  }
-  return null;
-}
+/* Provider order per request: Gemini (native generateContent API,
+   model chain) first when GEMINI_API_KEY is set, then Groq
+   (OpenAI-compatible endpoint) when GROQ_API_KEY is set, otherwise
+   the deterministic responder. */
 
 /* One-line failure log for the AI call path (surfaces in Vercel's
    runtime logs). Carries the provider name, the HTTP status when
@@ -294,26 +291,104 @@ function logAiFailure(providerName, status, detail) {
   } catch (e) { /* best-effort only */ }
 }
 
-/* Returns { reply, products } from the AI provider, or null when no key
-   is set or the call fails/times out — the caller then uses the
-   deterministic responder. Every failure is logged via logAiFailure.
-   Never throws. */
-async function aiAnswer(site, products, message) {
-  var provider = pickProvider();
-  if (!provider) return null; /* no key set — deterministic mode is intended, not a failure */
+/* Gemini via its native generateContent API. Tries each model in
+   GEMINI_MODELS in order — model availability differs per key, and
+   the not-available responses come back fast, so the chain is cheap.
+   Every failed attempt is logged via logAiFailure with the model
+   name in the detail. Returns { reply, products } on the first
+   success, or null when every model fails. Never throws. */
+async function geminiAnswer(site, products, message, key) {
   var f = globalThis.fetch;
   if (!f) {
-    logAiFailure(provider.name, null, "fetch is not available in this runtime");
+    logAiFailure("gemini", null, "fetch is not available in this runtime");
+    return null;
+  }
+  var systemText = buildAiPrompt(site, products);
+  var userText = String(message);
+  for (var m = 0; m < GEMINI_MODELS.length; m++) {
+    var model = GEMINI_MODELS[m];
+    var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, GEMINI_ATTEMPT_TIMEOUT_MS) : null;
+    try {
+      var res = await f(GEMINI_API_BASE + model + ":generateContent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemText }] },
+          contents: [{ role: "user", parts: [{ text: userText }] }],
+          generationConfig: { temperature: 0.4 }
+        }),
+        signal: ctrl ? ctrl.signal : undefined
+      });
+      if (!res || !res.ok) {
+        var errBody = "";
+        if (res) {
+          try { errBody = await res.text(); } catch (e2) { errBody = ""; }
+        }
+        logAiFailure("gemini", res ? res.status : null,
+          "model=" + model + " " + (errBody || (res ? "provider returned an error response with no body" : "no response from provider")));
+        continue;
+      }
+      var raw = await res.text();
+      var data = null;
+      try { data = JSON.parse(raw); } catch (e3) {
+        logAiFailure("gemini", res.status, "model=" + model + " unparseable response body: " + raw);
+        continue;
+      }
+      var cand = data && data.candidates && data.candidates[0];
+      var parts = cand && cand.content && cand.content.parts;
+      var text = "";
+      if (parts) {
+        for (var j = 0; j < parts.length; j++) {
+          if (parts[j] && typeof parts[j].text === "string") text += parts[j].text;
+        }
+      }
+      text = text.trim();
+      if (!text) {
+        /* no candidates, or content blocked (SAFETY etc.) */
+        var why = "";
+        if (data && data.promptFeedback && data.promptFeedback.blockReason) {
+          why = " promptFeedback blockReason=" + data.promptFeedback.blockReason;
+        } else if (cand && cand.finishReason) {
+          why = " finishReason=" + cand.finishReason;
+        }
+        logAiFailure("gemini", res.status, "model=" + model + " empty reply" + why + " body: " + raw);
+        continue;
+      }
+      var mentioned = [];
+      for (var i = 0; i < products.length && mentioned.length < 6; i++) {
+        if (text.indexOf(products[i].url) >= 0) mentioned.push(products[i]);
+      }
+      return { reply: text, products: mentioned.map(pub) };
+    } catch (e) {
+      var isTimeout = !!(e && (e.name === "AbortError" || e.code === 20));
+      logAiFailure("gemini", null,
+        "model=" + model + " " + (isTimeout ? "timeout after " + GEMINI_ATTEMPT_TIMEOUT_MS + "ms — " : "") +
+        ((e && e.message) || String(e)));
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  return null;
+}
+
+/* Groq via its OpenAI-compatible chat-completions endpoint.
+   Returns { reply, products } or null on any failure — every failure
+   is logged via logAiFailure. Never throws. */
+async function groqAnswer(site, products, message, key) {
+  var f = globalThis.fetch;
+  if (!f) {
+    logAiFailure("groq", null, "fetch is not available in this runtime");
     return null;
   }
   var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
   var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, AI_TIMEOUT_MS) : null;
   try {
-    var res = await f(provider.url, {
+    var res = await f(GROQ_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + provider.key },
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
       body: JSON.stringify({
-        model: provider.model,
+        model: GROQ_MODEL,
         temperature: 0.4,
         messages: [
           { role: "system", content: buildAiPrompt(site, products) },
@@ -327,20 +402,20 @@ async function aiAnswer(site, products, message) {
       if (res) {
         try { errBody = await res.text(); } catch (e2) { errBody = ""; }
       }
-      logAiFailure(provider.name, res ? res.status : null,
+      logAiFailure("groq", res ? res.status : null,
         errBody || (res ? "provider returned an error response with no body" : "no response from provider"));
       return null;
     }
     var raw = await res.text();
     var data = null;
     try { data = JSON.parse(raw); } catch (e3) {
-      logAiFailure(provider.name, res.status, "unparseable response body: " + raw);
+      logAiFailure("groq", res.status, "unparseable response body: " + raw);
       return null;
     }
     var text = data && data.choices && data.choices[0] && data.choices[0].message &&
       data.choices[0].message.content;
     if (!text || !String(text).trim()) {
-      logAiFailure(provider.name, res.status, "empty reply in response body: " + raw);
+      logAiFailure("groq", res.status, "empty reply in response body: " + raw);
       return null;
     }
     text = String(text).trim();
@@ -351,13 +426,27 @@ async function aiAnswer(site, products, message) {
     return { reply: text, products: mentioned.map(pub) };
   } catch (e) {
     var isTimeout = !!(e && (e.name === "AbortError" || e.code === 20));
-    logAiFailure(provider.name, null,
+    logAiFailure("groq", null,
       (isTimeout ? "timeout after " + AI_TIMEOUT_MS + "ms — " : "") +
       ((e && e.message) || String(e)));
     return null;
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/* Returns { reply, products } from an AI provider, or null when no
+   key is set or every provider fails — the caller then uses the
+   deterministic responder. Never throws. */
+async function aiAnswer(site, products, message) {
+  if (process.env.GEMINI_API_KEY) {
+    var g = await geminiAnswer(site, products, message, process.env.GEMINI_API_KEY);
+    if (g) return g;
+  }
+  if (process.env.GROQ_API_KEY) {
+    return await groqAnswer(site, products, message, process.env.GROQ_API_KEY);
+  }
+  return null; /* no key set — deterministic mode is intended, not a failure */
 }
 
 /* ------------------------------ handler ------------------------------ */
