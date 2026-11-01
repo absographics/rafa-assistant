@@ -271,22 +271,41 @@ function buildAiPrompt(site, products) {
    so one call path serves both. */
 function pickProvider() {
   if (process.env.GEMINI_API_KEY) {
-    return { url: GEMINI_URL, model: GEMINI_MODEL, key: process.env.GEMINI_API_KEY };
+    return { name: "gemini", url: GEMINI_URL, model: GEMINI_MODEL, key: process.env.GEMINI_API_KEY };
   }
   if (process.env.GROQ_API_KEY) {
-    return { url: GROQ_URL, model: GROQ_MODEL, key: process.env.GROQ_API_KEY };
+    return { name: "groq", url: GROQ_URL, model: GROQ_MODEL, key: process.env.GROQ_API_KEY };
   }
   return null;
 }
 
+/* One-line failure log for the AI call path (surfaces in Vercel's
+   runtime logs). Carries the provider name, the HTTP status when
+   there is a response, and a short snippet of the provider's error
+   body — or the exception message for network/timeout failures.
+   Never logs the API key, the Authorization header or the request
+   content, and logging itself must never break the endpoint. */
+function logAiFailure(providerName, status, detail) {
+  try {
+    var line = "AI_CALL_FAILED provider=" + providerName;
+    if (status != null) line += " status=" + status;
+    if (detail) line += " " + String(detail).replace(/\s+/g, " ").trim().slice(0, 300);
+    console.error(line);
+  } catch (e) { /* best-effort only */ }
+}
+
 /* Returns { reply, products } from the AI provider, or null when no key
    is set or the call fails/times out — the caller then uses the
-   deterministic responder. Never throws. */
+   deterministic responder. Every failure is logged via logAiFailure.
+   Never throws. */
 async function aiAnswer(site, products, message) {
   var provider = pickProvider();
-  if (!provider) return null;
+  if (!provider) return null; /* no key set — deterministic mode is intended, not a failure */
   var f = globalThis.fetch;
-  if (!f) return null;
+  if (!f) {
+    logAiFailure(provider.name, null, "fetch is not available in this runtime");
+    return null;
+  }
   var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
   var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, AI_TIMEOUT_MS) : null;
   try {
@@ -303,11 +322,27 @@ async function aiAnswer(site, products, message) {
       }),
       signal: ctrl ? ctrl.signal : undefined
     });
-    if (!res || !res.ok) return null;
-    var data = await res.json();
+    if (!res || !res.ok) {
+      var errBody = "";
+      if (res) {
+        try { errBody = await res.text(); } catch (e2) { errBody = ""; }
+      }
+      logAiFailure(provider.name, res ? res.status : null,
+        errBody || (res ? "provider returned an error response with no body" : "no response from provider"));
+      return null;
+    }
+    var raw = await res.text();
+    var data = null;
+    try { data = JSON.parse(raw); } catch (e3) {
+      logAiFailure(provider.name, res.status, "unparseable response body: " + raw);
+      return null;
+    }
     var text = data && data.choices && data.choices[0] && data.choices[0].message &&
       data.choices[0].message.content;
-    if (!text || !String(text).trim()) return null;
+    if (!text || !String(text).trim()) {
+      logAiFailure(provider.name, res.status, "empty reply in response body: " + raw);
+      return null;
+    }
     text = String(text).trim();
     var mentioned = [];
     for (var i = 0; i < products.length && mentioned.length < 6; i++) {
@@ -315,6 +350,10 @@ async function aiAnswer(site, products, message) {
     }
     return { reply: text, products: mentioned.map(pub) };
   } catch (e) {
+    var isTimeout = !!(e && (e.name === "AbortError" || e.code === 20));
+    logAiFailure(provider.name, null,
+      (isTimeout ? "timeout after " + AI_TIMEOUT_MS + "ms — " : "") +
+      ((e && e.message) || String(e)));
     return null;
   } finally {
     if (timer) clearTimeout(timer);
