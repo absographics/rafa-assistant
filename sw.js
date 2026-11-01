@@ -1,5 +1,5 @@
 /* Rafa Assistant — minimal service worker: cache-first for the app shell. */
-var CACHE = "rafa-assistant-v5";
+var CACHE = "rafa-assistant-v7";
 var SHELL = [
   "./",
   "index.html",

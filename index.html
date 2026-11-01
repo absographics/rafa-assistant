@@ -28,7 +28,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-weight:3
 .app{max-width:540px;margin:0 auto;height:100dvh;display:flex;flex-direction:column;background:linear-gradient(180deg,#FFFFFF 0%,var(--bg) 30%)}
 
 /* ---------- header ---------- */
-header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.8);backdrop-filter:blur(6px)}
+header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.8);backdrop-filter:blur(6px);position:relative;z-index:35}
 .head-row{display:flex;align-items:center;gap:10px}
 .brand{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
 .brand svg{width:34px;height:34px;flex:none}
@@ -42,6 +42,15 @@ header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgb
 .pill .dot{width:7px;height:7px;border-radius:50%;background:var(--maroon);flex:none}
 .pill.live .dot{background:var(--live)}
 .pill.live{color:var(--live-deep);border-color:rgba(62,122,78,.4)}
+
+/* ---------- ⋮ menu (everything except the dashboard home lives here) ---------- */
+.menu-wrap{position:relative;flex:none}
+.menu-btn{font-size:1.05rem;line-height:1;font-weight:600;color:var(--ink-soft)}
+.menu-panel{position:absolute;top:calc(100% + 8px);right:0;width:252px;background:var(--card);border:1px solid var(--line);border-radius:15px;box-shadow:0 16px 38px rgba(28,26,23,.2);padding:6px;z-index:36}
+.menu-panel[hidden]{display:none}
+.menu-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:none;background:transparent;border-radius:10px;padding:12px 12px;font-family:var(--sans);font-size:.94rem;font-weight:400;color:var(--ink);cursor:pointer;transition:.2s}
+.menu-item:hover{background:var(--ivory);color:var(--maroon)}
+.menu-item + .menu-item{border-top:1px solid var(--line)}
 
 /* ---------- settings ---------- */
 .settings{border-bottom:1px solid var(--line);background:var(--ivory);padding:13px 16px 15px}
@@ -328,30 +337,25 @@ header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgb
           <div class="b-name">Rafa Collection</div>
         </div>
       </div>
-      <button class="icon-btn" id="installBtn" type="button" aria-label="Install app">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11M7.5 10.5 12 15l4.5-4.5"/><path d="M4 19h16"/></svg>
-      </button>
-      <button class="icon-btn" id="reportBtn" type="button" aria-label="Owner report">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4H7a1.5 1.5 0 0 0-1.5 1.5V20A1.5 1.5 0 0 0 7 21.5h10A1.5 1.5 0 0 0 18.5 20V5.5A1.5 1.5 0 0 0 17 4h-2"/><rect x="9" y="2.4" width="6" height="3.6" rx="1"/><path d="M9.3 12h5.4M9.3 15.8h5.4"/></svg>
-      </button>
-      <button class="icon-btn" id="gearBtn" type="button" aria-label="Settings">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 8h9M19 8h1M4 16h3M13 16h7"/><circle cx="16" cy="8" r="2.2"/><circle cx="10" cy="16" r="2.2"/></svg>
-      </button>
+      <div class="menu-wrap" id="menuWrap">
+        <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-haspopup="true" aria-expanded="false">⋮</button>
+        <nav class="menu-panel" id="menuPanel" hidden aria-label="App menu">
+          <button class="menu-item" type="button" data-nav="test">🧪 Assistant Test Chat</button>
+          <button class="menu-item" type="button" data-nav="connections">🔌 Connections</button>
+          <button class="menu-item" type="button" data-nav="catalog">📦 Catalog</button>
+          <button class="menu-item" type="button" id="reportBtn">📋 Daily Owner Report</button>
+          <button class="menu-item" type="button" data-nav="dashboard">📊 Month Dashboard</button>
+          <button class="menu-item" type="button" data-nav="controls">🎉 Sale &amp; Controls</button>
+          <button class="menu-item" type="button" data-nav="account">👤 Account &amp; Team</button>
+          <button class="menu-item" type="button" id="installBtn">⬇ Install App</button>
+        </nav>
+      </div>
     </div>
     <div class="pill-row">
-      <span class="pill" id="modePill"><span class="dot"></span><span id="modeTxt">Demo mode — add a free API key for full AI</span></span>
+      <span class="pill" id="modePill"><span class="dot"></span><span id="modeTxt">Demo mode</span></span>
     </div>
   </header>
   <div class="install-hint" id="installHint" hidden>From Chrome's ⋮ menu, choose 'Add to Home screen'.</div>
-
-  <div class="settings" id="settings" hidden>
-    <p>Add your own free Groq API key (from <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a>) to switch on the full AI. It is saved only in this browser and sent only to Groq.</p>
-    <div class="set-row">
-      <input type="password" id="keyInput" placeholder="Paste your Groq API key" autocomplete="off" spellcheck="false">
-      <button type="button" id="saveKey">Save</button>
-    </div>
-    <p class="key-status" id="keyStatus"></p>
-  </div>
 
   <div class="report-backdrop" id="reportBackdrop" hidden></div>
   <aside class="report-panel" id="reportPanel" aria-hidden="true" aria-label="Owner report">
@@ -379,9 +383,41 @@ header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgb
     <p class="rp-note">In the live system this report goes to the owner every evening.</p>
   </aside>
 
+  <section class="face face-owner" id="faceHome" aria-label="Dashboard">
+
+    <div class="owner-sec">
+      <div class="os-sub2">Dashboard</div>
+      <div class="os-title">Rafa Collection</div>
+      <p class="os-sub">Your assistant's home — today's numbers are right here. Everything else lives in the ⋮ menu at the top.</p>
+      <div class="conn-card">
+        <div class="conn-top"><span class="conn-name" id="homeEmail">—</span><span class="status-chip" id="homeMethod">—</span></div>
+        <p class="conn-line">Signed in as the owner — this account controls the assistant, its connections and its accounts.</p>
+      </div>
+    </div>
+
+    <div class="owner-sec">
+      <div class="os-sub2">Owner Report</div>
+      <div class="os-title">📋 Today's account</div>
+      <div class="dash-tiles">
+        <div class="tile"><b id="rpt3Messages">0</b><span>Customer messages</span></div>
+        <div class="tile"><b id="rpt3Questions">0</b><span>Price / product questions</span></div>
+        <div class="tile"><b id="rpt3Clicks">0</b><span>Order-link clicks (sent to website)</span></div>
+        <div class="tile"><b id="rpt3Returns">0</b><span>Return / exchange requests</span></div>
+        <div class="tile"><b id="rpt3Handovers">0</b><span>Handovers — team will call</span></div>
+        <div class="tile"><b id="rpt3Scams">0</b><span>Scams stopped</span></div>
+        <div class="tile"><b id="rpt3Followups">0</b><span>Follow-ups sent</span></div>
+        <div class="tile"><b id="rpt3HotLeads">0</b><span>Hot leads</span></div>
+        <div class="tile"><b id="rpt3StatusChecks">0</b><span>Status checks</span></div>
+      </div>
+      <p class="rp-summary" id="rpt3Summary"></p>
+      <p class="rp-note">In the live system this report goes to the owner every evening.</p>
+    </div>
+
+  </section>
+
   <div class="face face-customer" id="faceCustomer" hidden>
   <div class="test-bar">
-    <button class="back-btn" id="backToOwner" type="button">← Owner panel</button>
+    <button class="back-btn" id="backToOwner" type="button">← Dashboard</button>
     <span class="test-bar-title">🧪 Assistant Test</span>
   </div>
   <p class="test-note">This is only for testing — customers will meet the assistant on WhatsApp, Instagram and the website, not in this app.</p>
@@ -413,13 +449,9 @@ header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgb
   <div class="foot-note">rafacollection.com</div>
   </div><!-- /faceCustomer -->
 
-  <section class="face face-owner" id="faceOwner" aria-label="Owner">
-
-    <div class="owner-sec">
-      <div class="os-sub2">Account</div>
-      <div class="os-title">👤 Account — login & team</div>
-      <p class="os-sub">Your account, owner and employee roles, and who can access what — all in one place.</p>
-      <button class="test-open-btn" id="openAccount" type="button">👤 Open account</button>
+  <section class="face face-owner" id="faceConnections" hidden aria-label="Connections">
+    <div>
+      <button class="back-btn" id="backFromConnections" type="button">← Dashboard</button>
     </div>
 
     <div class="owner-sec">
@@ -463,11 +495,11 @@ header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgb
       </div>
     </div>
 
-    <div class="owner-sec">
-      <div class="os-sub2">Dashboard</div>
-      <div class="os-title">📊 Dashboard — Monthly account</div>
-      <p class="os-sub">The whole month in one place — daily totals, estimated sales, top designs. Everything is here at month-end.</p>
-      <button class="test-open-btn" id="openDashboard" type="button">📊 Open dashboard</button>
+  </section>
+
+  <section class="face face-owner" id="faceCatalog" hidden aria-label="Catalog">
+    <div>
+      <button class="back-btn" id="backFromCatalog" type="button">← Dashboard</button>
     </div>
 
     <div class="owner-sec">
@@ -483,22 +515,11 @@ header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgb
       <div id="catalogList"></div>
     </div>
 
-    <div class="owner-sec">
-      <div class="os-sub2">Owner</div>
-      <div class="os-title">Owner Report — Today's account</div>
-      <div class="rp-rows">
-        <div class="rp-row"><span>Customer messages</span><b id="rpt2Messages">0</b></div>
-        <div class="rp-row"><span>Price / product questions</span><b id="rpt2Questions">0</b></div>
-        <div class="rp-row"><span>Order-link clicks (sent to website)</span><b id="rpt2Clicks">0</b></div>
-        <div class="rp-row"><span>Return / exchange requests</span><b id="rpt2Returns">0</b></div>
-        <div class="rp-row"><span>Handovers — team will call</span><b id="rpt2Handovers">0</b></div>
-        <div class="rp-row"><span>Scams stopped</span><b id="rpt2Scams">0</b></div>
-        <div class="rp-row"><span>Follow-ups sent</span><b id="rpt2Followups">0</b></div>
-        <div class="rp-row"><span>Hot leads</span><b id="rpt2HotLeads">0</b></div>
-        <div class="rp-row"><span>Status checks</span><b id="rpt2StatusChecks">0</b></div>
-      </div>
-      <p class="rp-summary" id="rpt2Summary"></p>
-      <p class="rp-note">In the live system this report goes to the owner every evening.</p>
+  </section>
+
+  <section class="face face-owner" id="faceControls" hidden aria-label="Controls">
+    <div>
+      <button class="back-btn" id="backFromControls" type="button">← Dashboard</button>
     </div>
 
     <div class="owner-sec">
@@ -527,13 +548,6 @@ header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgb
     </div>
 
     <div class="owner-sec">
-      <div class="os-sub2">Test</div>
-      <div class="os-title">🧪 Assistant ko test karo</div>
-      <p class="os-sub">Talk to the assistant as a customer — try prices, COD, returns, everything, right here.</p>
-      <button class="test-open-btn" id="openTest" type="button">🧪 Open test</button>
-    </div>
-
-    <div class="owner-sec">
       <div class="os-sub2">Owner</div>
       <div class="os-title">🛡️ Hifazat (Security)</div>
       <p class="os-sub">The assistant's security arrangements — all of these are always ON.</p>
@@ -555,7 +569,7 @@ header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgb
 
   <section class="face face-owner" id="faceDashboard" hidden aria-label="Dashboard">
     <div>
-      <button class="back-btn" id="backFromDashboard" type="button">← Owner panel</button>
+      <button class="back-btn" id="backFromDashboard" type="button">← Dashboard</button>
     </div>
 
     <div class="owner-sec">
@@ -607,7 +621,7 @@ header{padding:14px 16px 10px;border-bottom:1px solid var(--line);background:rgb
 
   <section class="face face-owner" id="faceAccount" hidden aria-label="Account">
     <div>
-      <button class="back-btn" id="backFromAccount" type="button">← Owner panel</button>
+      <button class="back-btn" id="backFromAccount" type="button">← Dashboard</button>
     </div>
 
     <div class="owner-sec">
@@ -1922,9 +1936,6 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
 (function(){
   "use strict";
   var L = window.RafaLogic;
-  var KEY_STORE = "rafa_groq_key";
-  var GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-  var GROQ_MODEL = "llama-3.3-70b-versatile";
   var LINK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>';
 
   var msgsEl = document.getElementById("msgs");
@@ -1932,12 +1943,6 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
   var input = document.getElementById("textInput");
   var pill = document.getElementById("modePill");
   var modeTxt = document.getElementById("modeTxt");
-  var gearBtn = document.getElementById("gearBtn");
-  var settings = document.getElementById("settings");
-  var keyInput = document.getElementById("keyInput");
-  var saveKey = document.getElementById("saveKey");
-  var keyStatus = document.getElementById("keyStatus");
-  var history = [];
 
   /* ---------- owner report: live session counters ---------- */
   var session = L.createSession();
@@ -1950,7 +1955,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
       Messages: uiStats.messages, Questions: uiStats.questions,
       Clicks: uiStats.clicks, Returns: uiStats.returns, Handovers: uiStats.handovers,
       Scams: uiStats.scams, Followups: uiStats.followups,
-      "Hot Leads": uiStats.hotleads, "Status Checks": uiStats.statusChecks
+      HotLeads: uiStats.hotleads, StatusChecks: uiStats.statusChecks
     };
     var summary =
       "Today in this demo: " + uiStats.questions + " questions came in • " +
@@ -1961,7 +1966,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
       (uiStats.followups > 0 ? " • " + uiStats.followups + " follow-ups sent automatically" : "") +
       (uiStats.hotleads > 0 ? " • " + uiStats.hotleads + " hot leads found" : "") +
       (uiStats.statusChecks > 0 ? " • " + uiStats.statusChecks + " status checks done" : "");
-    ["rpt", "rpt2"].forEach(function(pre){
+    ["rpt", "rpt3"].forEach(function(pre){
       Object.keys(vals).forEach(function(k){
         var el = document.getElementById(pre + k);
         if (el) el.textContent = vals[k];
@@ -2049,37 +2054,23 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
     }
   });
 
-  function getKey(){ try { return localStorage.getItem(KEY_STORE) || ""; } catch(e){ return ""; } }
-  function liveMode(){ return !!getKey(); }
-
+  /* The brain lives on the server now (/api/chat). The pill simply reports
+     what the server's health check says: a real AI key is configured there
+     ("AI active") or the built-in demo responder is the fallback
+     ("Demo mode"). No key is ever asked for, stored or sent by this app. */
   function refreshMode(){
-    if (liveMode()){
-      pill.classList.add("live");
-      modeTxt.textContent = "AI live";
-      keyInput.value = getKey();
-    } else {
-      pill.classList.remove("live");
-      modeTxt.textContent = "Demo mode — add a free API key for full AI";
-      keyInput.value = "";
-    }
+    pill.classList.remove("live");
+    modeTxt.textContent = "Demo mode";
+    fetch("/api/chat?health=1").then(function(res){
+      if (!res.ok) throw new Error("health http");
+      return res.json();
+    }).then(function(d){
+      if (d && d.ai){
+        pill.classList.add("live");
+        modeTxt.textContent = "AI active";
+      }
+    }).catch(function(){ /* server unreachable — demo pill stays, honestly */ });
   }
-
-  gearBtn.addEventListener("click", function(){
-    settings.hidden = !settings.hidden;
-    if (!settings.hidden) keyInput.focus();
-  });
-  saveKey.addEventListener("click", function(){
-    var v = keyInput.value.trim();
-    try {
-      if (v) localStorage.setItem(KEY_STORE, v); else localStorage.removeItem(KEY_STORE);
-    } catch(e){}
-    refreshMode();
-    keyStatus.textContent = v ? "Saved — full AI is on." : "Key removed — demo mode is on.";
-    if (v){
-      setTimeout(function(){ settings.hidden = true; keyStatus.textContent = ""; }, 900);
-      addAssistant("Full AI is on now. Ask me anything about Rafa Collection — designs, prices, COD or ordering.");
-    }
-  });
 
   function scrollDown(){ msgsEl.scrollTop = msgsEl.scrollHeight; }
   function escapeHtml(s){
@@ -2129,22 +2120,35 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
     return d;
   }
 
-  function groqReply(userText){
-    history.push({role: "user", content: userText});
-    var msgs = [{role: "system", content: L.buildSystemPrompt()}].concat(history.slice(-10));
-    return fetch(GROQ_URL, {
+  /* The test chat talks to the server brain: POST /api/chat with the
+     connected store's URL (shopBase() falls back to the Rafa sample).
+     Resolves { reply, products } — throws on any network/HTTP/shape
+     problem so the caller can fall back to the built-in demo responder. */
+  function serverReply(text){
+    return fetch("/api/chat", {
       method: "POST",
-      headers: {"Content-Type": "application/json", "Authorization": "Bearer " + getKey()},
-      body: JSON.stringify({model: GROQ_MODEL, temperature: 0.4, messages: msgs})
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ site: L.shopBase(), message: text })
     }).then(function(res){
-      if (!res.ok) throw new Error("http " + res.status);
+      if (!res.ok) throw new Error("chat http " + res.status);
       return res.json();
     }).then(function(data){
-      var text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-      if (!text) throw new Error("empty reply");
-      history.push({role: "assistant", content: text});
-      return text;
+      if (!data || typeof data.reply !== "string" || !data.reply.trim()) throw new Error("chat shape");
+      return data;
     });
+  }
+
+  function handleDemoAnswer(text){
+    var r = L.demoRespond(text, session);
+    if (r.silent) return; /* flood gate / takeover: stay silent, show nothing */
+    if (r.ev === "question"){ uiStats.questions++; }
+    if (r.ev === "status"){ uiStats.statusChecks++; }
+    addAssistant(r.text, r.buttons);
+    if (r.hotlead) addHotLeadCard();
+    if (r.handover) addHandoverCard(r.handover);
+    var prods = productsFromButtons(r.buttons);
+    if (prods.length) armFollowUp(prods);
+    renderReport();
   }
 
   function handleSend(text){
@@ -2155,37 +2159,28 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
     uiStats.messages++;
     renderReport();
     var typing = showTyping();
-    if (liveMode()){
+    serverReply(text).then(function(data){
+      typing.remove();
       L.logEvent("messages"); /* demo mode logs this inside demoRespond */
       if (L.isHotLead(text)) addHotLeadCard();
-      groqReply(text).then(function(reply){
-        typing.remove();
-        var parsed = L.parseHandoverMarker(reply, lastOrderId());
-        if (parsed.text.indexOf("rafacollection.com/products/") >= 0){ uiStats.questions++; L.logEvent("questions"); }
-        addAssistant(parsed.text);
-        if (parsed.handover) addHandoverCard(parsed.handover, true);
-        renderReport();
-      }).catch(function(){
-        typing.remove();
-        history.pop(); /* drop the unanswered user turn */
-        addAssistant("Sorry, I couldn't reach the AI just now — your key may need checking in Settings. You can always browse and shop on our website:",
-          [{label: "View on Website", href: L.SHOP.site}]);
+      var parsed = L.parseHandoverMarker(data.reply, lastOrderId());
+      var prods = [];
+      (Array.isArray(data.products) ? data.products : []).forEach(function(p){
+        if (p && p.url) prods.push({ name: p.name || "", url: p.url });
       });
-    } else {
-      setTimeout(function(){
-        typing.remove();
-        var r = L.demoRespond(text, session);
-        if (r.silent) return; /* flood gate / takeover: stay silent, show nothing */
-        if (r.ev === "question"){ uiStats.questions++; }
-        if (r.ev === "status"){ uiStats.statusChecks++; }
-        addAssistant(r.text, r.buttons);
-        if (r.hotlead) addHotLeadCard();
-        if (r.handover) addHandoverCard(r.handover);
-        var prods = productsFromButtons(r.buttons);
-        if (prods.length) armFollowUp(prods);
-        renderReport();
-      }, 650);
-    }
+      if (prods.length || parsed.text.indexOf("/products/") >= 0){ uiStats.questions++; L.logEvent("questions"); }
+      addAssistant(parsed.text);
+      if (parsed.handover) addHandoverCard(parsed.handover, true);
+      if (prods.length) armFollowUp(productsFromButtons(prods.map(function(p){
+        return { label: p.name, href: p.url };
+      })));
+      renderReport();
+    }).catch(function(){
+      /* server brain unreachable — the built-in demo responder answers,
+         with exactly the same stats / handover / follow-up handling */
+      typing.remove();
+      handleDemoAnswer(text);
+    });
   }
 
   form.addEventListener("submit", function(ev){
@@ -2344,26 +2339,62 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
   });
   renderSale();
 
-  /* views — the app is owner-only; the customer chat is a testing tool */
+  /* views — home is the dashboard; everything else lives behind the ⋮ menu */
+  var faceHome = document.getElementById("faceHome");
+  var faceConnections = document.getElementById("faceConnections");
+  var faceCatalog = document.getElementById("faceCatalog");
+  var faceControls = document.getElementById("faceControls");
   var faceCustomer = document.getElementById("faceCustomer");
-  var faceOwner = document.getElementById("faceOwner");
   var faceDashboard = document.getElementById("faceDashboard");
   var faceAccount = document.getElementById("faceAccount");
+
+  /* ⋮ menu — open/close + outside-tap close */
+  var menuWrap = document.getElementById("menuWrap");
+  var menuBtn = document.getElementById("menuBtn");
+  var menuPanel = document.getElementById("menuPanel");
+  function closeMenu(){
+    menuPanel.hidden = true;
+    menuBtn.setAttribute("aria-expanded", "false");
+  }
+  menuBtn.addEventListener("click", function(e){
+    e.stopPropagation();
+    var willOpen = menuPanel.hidden;
+    menuPanel.hidden = !willOpen;
+    menuBtn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+  });
+  document.addEventListener("click", function(e){
+    if (!menuPanel.hidden && !menuWrap.contains(e.target)) closeMenu();
+  });
+  document.addEventListener("keydown", function(e){
+    if (e.key === "Escape") closeMenu();
+  });
+
   function showView(which){
-    faceOwner.hidden = which !== "owner";
+    faceHome.hidden = which !== "home";
+    faceConnections.hidden = which !== "connections";
+    faceCatalog.hidden = which !== "catalog";
+    faceControls.hidden = which !== "controls";
     faceCustomer.hidden = which !== "test";
     faceDashboard.hidden = which !== "dashboard";
     faceAccount.hidden = which !== "account";
-    if (which === "owner"){ renderWebsiteConn(); renderCatalog(); renderReport(); }
+    closeMenu();
+    if (which === "home"){ renderReport(); }
+    else if (which === "connections"){ renderWebsiteConn(); }
+    else if (which === "catalog"){ renderCatalog(); }
     else if (which === "test"){ scrollDown(); }
     else if (which === "dashboard"){ renderDashboard(); }
   }
-  document.getElementById("openTest").addEventListener("click", function(){ showView("test"); });
-  document.getElementById("backToOwner").addEventListener("click", function(){ showView("owner"); });
-  document.getElementById("openDashboard").addEventListener("click", function(){ showView("dashboard"); });
-  document.getElementById("backFromDashboard").addEventListener("click", function(){ showView("owner"); });
-  document.getElementById("openAccount").addEventListener("click", function(){ showView("account"); });
-  document.getElementById("backFromAccount").addEventListener("click", function(){ showView("owner"); });
+  Array.prototype.forEach.call(menuPanel.querySelectorAll("[data-nav]"), function(btn){
+    btn.addEventListener("click", function(){ showView(btn.getAttribute("data-nav")); });
+  });
+  document.getElementById("reportBtn").addEventListener("click", closeMenu);
+  document.getElementById("installBtn").addEventListener("click", closeMenu);
+  document.getElementById("backToOwner").addEventListener("click", function(){ showView("home"); });
+  document.getElementById("backFromConnections").addEventListener("click", function(){ showView("home"); });
+  document.getElementById("backFromCatalog").addEventListener("click", function(){ showView("home"); });
+  document.getElementById("backFromControls").addEventListener("click", function(){ showView("home"); });
+  document.getElementById("backFromDashboard").addEventListener("click", function(){ showView("home"); });
+  document.getElementById("backFromAccount").addEventListener("click", function(){ showView("home"); });
 
   /* ================= LOGIN GATE — asal Firebase login =================
      Auth ka asal kaam module script (window.AuthBridge) karta hai. SDK net
@@ -2543,6 +2574,10 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
     if (!currentUser) return;
     acctEmailEl.textContent = currentUser.email || "—";
     acctMethodEl.textContent = currentUser.isGoogle ? "Google" : "Email + password";
+    var homeEmailEl = document.getElementById("homeEmail");
+    var homeMethodEl = document.getElementById("homeMethod");
+    if (homeEmailEl) homeEmailEl.textContent = currentUser.email || "—";
+    if (homeMethodEl) homeMethodEl.textContent = currentUser.isGoogle ? "Google" : "Email + password";
     changePwBox.hidden = !currentUser.isEmailPw;
     googlePwNote.hidden = !currentUser.isGoogle || currentUser.isEmailPw;
     cpMsg.textContent = "";
@@ -2691,7 +2726,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
         renderAccount();
         startApp();
         if (!msgsEl.childElementCount) addAssistant(L.demoRespond("hello").text);
-        showView("owner");
+        showView("home");
       });
     } else {
       var wasOpen = !appRoot.hidden;   /* app khula tha = session beech me khatam hua */
@@ -3107,7 +3142,6 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
     takeover = false;
     session = L.createSession();
     userTexts = [];
-    history = [];
     uiStats = { messages: 0, questions: 0, clicks: 0, returns: 0, handovers: 0, scams: 0, followups: 0, hotleads: 0, statusChecks: 0 };
     msgsEl.innerHTML = "";
     closeReport();
