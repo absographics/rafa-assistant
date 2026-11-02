@@ -489,27 +489,49 @@ function respond(site, products, rawMessage) {
 
 /* ------------------ AI brain (Gemini / Groq / OpenRouter) ------------------ */
 
-function buildAiPrompt(site, products) {
+function buildAiPrompt(site, products, message) {
   var isRafa = domainOf(site) === RAFA_DOMAIN;
   var shop = shopNameOf(site, products);
-  var lines = products.map(function (p) {
+  /* Step 3 — relevant context only: the model gets the products that
+     match the customer's question (the first 12 for a general chat)
+     and, for Rafa, only the policy sections the question touches.
+     Smaller prompts answer faster and drift less; if no policy
+     section matches, all of them are included (safe default). */
+  var npq = normPad(message || "");
+  var promptMatches = message ? findMatches(products, npq) : [];
+  var selected = promptMatches.length ? promptMatches.slice(0, 8) : products.slice(0, 12);
+  var lines = selected.map(function (p) {
     var s = "- " + p.name + " — ₹" + p.price;
     if (p.soldout) s += " — SOLD OUT at the moment";
     if (p.sizes && p.sizes.length) s += " — sizes: " + p.sizes.join(", ");
     if (p.desc) s += " — details: " + p.desc;
     return s + " — " + p.url;
   });
-  var policy = isRafa
-    ? "ABOUT THE SHOP (verified from the shop's own website — state these facts exactly, never soften or invent beyond them): Rafa Collection — women's ethnic wear since 2013: Pakistani suits, Farshi salwar suits, Anarkali gowns, kurtis, co-ord sets and kaftans. Orders are placed ONLY on the website (rafacollection.com) — never on WhatsApp or in chat. The shop is in Old Panvel, Navi Mumbai.\nPAYMENTS & COD: Cash on Delivery (COD) is available. Prepaid orders get FREE shipping; for COD orders, shipping charges are calculated at checkout.\nSHIPPING & DELIVERY: Orders are dispatched within 3 working days and delivered in 7–14 working days anywhere in India, via couriers like Delhivery, Xpressbees, Blue Dart and FedEx. Delivery is attempted on business days only (not Sundays or national holidays). You cannot track a parcel yourself — for a delivery problem, follow the complaint flow below.\nCANCELLING AN ORDER: A customer can cancel within 6 hours of placing the order (Mon–Sat, 10 AM–7 PM) on WhatsApp 8369845866 or by email to support@rafacollection.com. No cancellation is possible after dispatch. Any amount paid is refunded to the same payment mode.\nRETURNS & EXCHANGES (strict — state exactly, never soften): NO return or exchange for size issues, minor colour differences (camera/light), or simply not liking the product. Discounted/sale products cannot be returned or exchanged. A return/exchange is possible ONLY when the item received is damaged, defective or the wrong item: the customer must inform the shop within 48 hours of delivery and must have a full, uncut parcel-opening video showing the defect. The product must be unused, unwashed, with tags and original packaging. There are NO money refunds — the customer gets an exchange or a coupon code of the dress amount. Pickup is arranged by the team in 1–2 working days after the request is accepted.\nCONTACTS (share when a customer asks to reach the team): WhatsApp 8369845866, Call 08048795138, Email support@rafacollection.com, Shop: Shop no 3, Nawab Building, Patel Mohalla, Old Panvel, Navi Mumbai 410206."
-    : "POLICIES: You do not have this shop's COD/shipping policy details. If a customer asks, say the team will confirm, or point them to the store's website: " + site + ". Never guess a policy.";
+  var policy;
+  if (isRafa) {
+    var rafaCore = "ABOUT THE SHOP (verified from the shop's own website \u2014 state these facts exactly, never soften or invent beyond them): Rafa Collection \u2014 women's ethnic wear since 2013: Pakistani suits, Farshi salwar suits, Anarkali gowns, kurtis, co-ord sets and kaftans. Orders are placed ONLY on the website (rafacollection.com) \u2014 never on WhatsApp or in chat. The shop is in Old Panvel, Navi Mumbai.\nPAYMENTS & COD: Cash on Delivery (COD) is available. Prepaid orders get FREE shipping; for COD orders, shipping charges are calculated at checkout.\nCONTACTS (share when a customer asks to reach the team): WhatsApp 8369845866, Call 08048795138, Email support@rafacollection.com, Shop: Shop no 3, Nawab Building, Patel Mohalla, Old Panvel, Navi Mumbai 410206.";
+    var rafaDelivery = "SHIPPING & DELIVERY: Orders are dispatched within 3 working days and delivered in 7\u201314 working days anywhere in India, via couriers like Delhivery, Xpressbees, Blue Dart and FedEx. Delivery is attempted on business days only (not Sundays or national holidays). You cannot track a parcel yourself \u2014 for a delivery problem, follow the complaint flow below.";
+    var rafaCancel = "CANCELLING AN ORDER: A customer can cancel within 6 hours of placing the order (Mon\u2013Sat, 10 AM\u20137 PM) on WhatsApp 8369845866 or by email to support@rafacollection.com. No cancellation is possible after dispatch. Any amount paid is refunded to the same payment mode.";
+    var rafaReturns = "RETURNS & EXCHANGES (strict \u2014 state exactly, never soften): NO return or exchange for size issues, minor colour differences (camera/light), or simply not liking the product. Discounted/sale products cannot be returned or exchanged. A return/exchange is possible ONLY when the item received is damaged, defective or the wrong item: the customer must inform the shop within 48 hours of delivery and must have a full, uncut parcel-opening video showing the defect. The product must be unused, unwashed, with tags and original packaging. There are NO money refunds \u2014 the customer gets an exchange or a coupon code of the dress amount. Pickup is arranged by the team in 1\u20132 working days after the request is accepted.";
+    var wantDelivery = npq.indexOf("deliver") >= 0 || npq.indexOf(" dispatch ") >= 0 || npq.indexOf(" parcel ") >= 0 || npq.indexOf(" shipping ") >= 0 || npq.indexOf(" kab ") >= 0 || npq.indexOf(" late ") >= 0 || npq.indexOf(" track") >= 0 || npq.indexOf("aayega") >= 0 || npq.indexOf("pahunch") >= 0;
+    var wantCancel = npq.indexOf(" cancel ") >= 0;
+    var wantReturns = npq.indexOf(" return ") >= 0 || npq.indexOf(" exchange ") >= 0 || npq.indexOf(" refund ") >= 0 || npq.indexOf("pasand") >= 0 || npq.indexOf(" damaged ") >= 0 || npq.indexOf(" defect") >= 0 || npq.indexOf(" wrong ") >= 0 || npq.indexOf(" kharab ") >= 0 || npq.indexOf(" toota ") >= 0;
+    if (!wantDelivery && !wantCancel && !wantReturns) { wantDelivery = true; wantCancel = true; wantReturns = true; }
+    policy = rafaCore +
+      (wantDelivery ? "\n" + rafaDelivery : "") +
+      (wantCancel ? "\n" + rafaCancel : "") +
+      (wantReturns ? "\n" + rafaReturns : "");
+  } else {
+    policy = "POLICIES: You do not have this shop's COD/shipping policy details. If a customer asks, say the team will confirm, or point them to the store's website: " + site + ". Never guess a policy.";
+  }
   return [
     "You are a warm, helpful member of the " + shop + " team. Speak as the shop's own team — say 'we' or 'our team', like a person from the shop. Never say or hint that you are an AI, a bot, an assistant or a language model.",
     "LANGUAGE: Reply in the same language and script as the customer's message — English to English, Roman Hinglish to Roman Hinglish, Devanagari Hindi to Devanagari Hindi. If you cannot tell, use English.",
     "Keep replies concise — 2–4 short lines, like a good shop assistant. Do not dump a menu of everything you can do.",
     "",
-    "CATALOGUE (the shop's live catalogue — the ONLY products and prices you know):",
+    "CATALOGUE — RELEVANT PRODUCTS (from the shop's live catalogue — the only products and prices you may state):",
     lines.join("\n"),
-    "Never invent a product, a price, a discount or an offer. If a design is not in the catalogue above, say so honestly and suggest the closest match from the list.",
+    "Never invent a product, a price, a discount or an offer. If a design is not listed here, say honestly that you will check with the team, and suggest the closest match from the list above.",
     policy,
     "When a customer asks about a design or a price, answer with the matching products from the catalogue and include each product's page link exactly as listed.",
     "",
@@ -552,7 +574,7 @@ async function geminiAnswer(site, products, message, key, deadline) {
     logAiFailure("gemini", null, "fetch is not available in this runtime");
     return null;
   }
-  var systemText = buildAiPrompt(site, products);
+  var systemText = buildAiPrompt(site, products, message);
   var userText = String(message);
   for (var m = 0; m < GEMINI_MODELS.length; m++) {
     var model = GEMINI_MODELS[m];
@@ -647,7 +669,7 @@ async function groqAnswer(site, products, message, key) {
         temperature: 0.4,
         max_tokens: AI_MAX_OUTPUT_TOKENS,
         messages: [
-          { role: "system", content: buildAiPrompt(site, products) },
+          { role: "system", content: buildAiPrompt(site, products, message) },
           { role: "user", content: String(message) }
         ]
       }),
@@ -743,7 +765,7 @@ async function openrouterAttempt(site, products, message, key, model, timeoutMs)
         temperature: 0.4,
         max_tokens: AI_MAX_OUTPUT_TOKENS,
         messages: [
-          { role: "system", content: buildAiPrompt(site, products) },
+          { role: "system", content: buildAiPrompt(site, products, message) },
           { role: "user", content: String(message) }
         ]
       }),
