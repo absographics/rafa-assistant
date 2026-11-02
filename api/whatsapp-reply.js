@@ -1,5 +1,6 @@
 "use strict";
 /* ABSO Assistant — WhatsApp reply worker (Vercel serverless function).
+   (2026-11-02: redeploy marker — permanent system-user token live.)
    Called only by /api/whatsapp (header x-hook-secret must equal
    WHATSAPP_VERIFY_TOKEN). Takes one customer message, asks the AI
    brain (/api/chat, same shop book + live catalogue) for the
