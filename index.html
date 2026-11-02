@@ -2124,16 +2124,25 @@ if (typeof module !== "undefined" && module.exports) module.exports = RafaLogic;
      connected store's URL (shopBase() falls back to the Rafa sample).
      Resolves { reply, products } — throws on any network/HTTP/shape
      problem so the caller can fall back to the built-in demo responder. */
+  /* Conversation memory (Step 5): carry the context object the
+     server returns so follow-up questions resolve across messages. */
+  var chatCtx = null;
+  try { chatCtx = JSON.parse(localStorage.getItem("rafa_chat_ctx") || "null"); } catch(e){ chatCtx = null; }
+
   function serverReply(text){
     return fetch("/api/chat", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ site: L.shopBase(), message: text })
+      body: JSON.stringify({ site: L.shopBase(), message: text, context: chatCtx || undefined })
     }).then(function(res){
       if (!res.ok) throw new Error("chat http " + res.status);
       return res.json();
     }).then(function(data){
       if (!data || typeof data.reply !== "string" || !data.reply.trim()) throw new Error("chat shape");
+      if (data.context){
+        chatCtx = data.context;
+        try { localStorage.setItem("rafa_chat_ctx", JSON.stringify(chatCtx)); } catch(e){}
+      }
       return data;
     });
   }
