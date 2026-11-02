@@ -30,7 +30,11 @@ var GEMINI_ATTEMPT_TIMEOUT_MS = 10000;
 var GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 var GROQ_MODEL = "llama-3.3-70b-versatile";
 var OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-var OPENROUTER_MODELS = ["google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "nvidia/nemotron-3.5-super-vl:free"];
+/* Stage 6 measurement (2 Nov, live logs): nvidia/nemotron-3.5-super-vl
+   returned an EMPTY reply on every attempt in two separate windows —
+   it is a vision model misbehaving on text chat — so it is out of the
+   chain; the other three stay in their measured order. */
+var OPENROUTER_MODELS = ["google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3-ultra-550b-a55b:free"];
 var AI_TIMEOUT_MS = 12000;
 /* Step 1 (zero-budget speed fix): the whole AI phase gets a hard time
    budget and each OpenRouter attempt a shorter timeout. When the
@@ -443,7 +447,13 @@ function respond(site, products, rawMessage, ctx) {
     (np.indexOf(" parcel ") >= 0 || np.indexOf(" order ") >= 0 || np.indexOf(" delivery ") >= 0 || np.indexOf(" abhi tak ") >= 0);
   var isComplaint = nahiAaya || np.indexOf("aane wala tha") >= 0 ||
     np.indexOf("not delivered") >= 0 ||
-    (np.indexOf(" late ") >= 0 && (np.indexOf(" parcel ") >= 0 || np.indexOf(" order ") >= 0 || np.indexOf(" delivery ") >= 0));
+    (np.indexOf(" late ") >= 0 && (np.indexOf(" parcel ") >= 0 || np.indexOf(" order ") >= 0 || np.indexOf(" delivery ") >= 0)) ||
+    /* Stage 6b: a parcel/order STATUS question ("koi update hai?",
+       "10 din ho gaye") is the same flow — order ID + team check —
+       not the generic menu. */
+    ((np.indexOf(" parcel ") >= 0 || np.indexOf(" order ") >= 0) &&
+     (np.indexOf(" update ") >= 0 || np.indexOf(" status ") >= 0 || np.indexOf(" din ho gaye ") >= 0 ||
+      np.indexOf(" kahan hai ") >= 0 || np.indexOf(" kidhar ") >= 0));
   if (isComplaint) {
     return { reply: pick(
       "I'm really sorry your parcel hasn't arrived yet. Please share your order ID — our team will check it on priority and call you.\n[[HANDOVER: delivery complaint]]",
@@ -542,6 +552,45 @@ function respond(site, products, rawMessage, ctx) {
         pick("\nTell me a design name for its page link.", "\nKisi design ka naam bataiye, uski page link bhej dunga."),
       products: items.map(pub)
     };
+  }
+
+  /* Stage 6b — suggestion questions (AI-down path): real designs,
+     filtered by the customer's budget when one is stated, instead
+     of the generic menu. */
+  var budgetMatch = String(message).match(/([0-9][0-9,]*)\s*(ke andar|ke under|under|below|tak)/i) ||
+    String(message).match(/(under|below|budget)\s*(₹|rs\.?)?\s*([0-9][0-9,]*)/i);
+  var budgetCap = null;
+  if (budgetMatch) {
+    var capDigits = (budgetMatch[1] && /[0-9]/.test(budgetMatch[1]) && budgetMatch[2] && /andar|under|below|tak/i.test(budgetMatch[2]))
+      ? budgetMatch[1] : (budgetMatch[3] || budgetMatch[1] || "");
+    budgetCap = parseInt(String(capDigits).replace(/[^0-9]/g, ""), 10) || null;
+  }
+  var wantsSuggest = np.indexOf(" suggest ") >= 0 || np.indexOf(" recommend ") >= 0 ||
+    np.indexOf(" batao ") >= 0 || np.indexOf(" chahiye ") >= 0;
+  if (wantsSuggest || budgetCap) {
+    var pool = products.filter(function (p) { return !p.soldout; });
+    if (budgetCap) {
+      pool = pool.filter(function (p) {
+        return parseInt(String(p.price).replace(/[^0-9]/g, ""), 10) <= budgetCap;
+      });
+    }
+    if (pool.length) {
+      var picksS = pool.slice(0, 5);
+      return {
+        reply: pick(
+          budgetCap ? "Here are designs within your budget:\n" : "Here are some designs you may like:\n",
+          budgetCap ? "Aapke budget me ye designs hain:\n" : "Ye designs aapko pasand aa sakte hain:\n"
+        ) + listTextStock(picksS) +
+          pick("\nTap a design to view it on the website.", "\nKisi design par tap karke website par dekhein."),
+        products: picksS.map(pub)
+      };
+    }
+    if (budgetCap) {
+      return { reply: pick(
+        "I couldn't find a design under ₹" + budgetCap + " right now — please see the full collection on the website: " + site,
+        "Abhi ₹" + budgetCap + " ke andar koi design nahi mila — poori collection website par dekhein: " + site
+      ), products: [] };
+    }
   }
 
   return { reply: pick(
