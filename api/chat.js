@@ -196,6 +196,69 @@ function listTextStock(items) {
   }).join("\n");
 }
 
+/* Step 5 — conversation memory. The endpoint stays stateless: the
+   client (owner app, website widget) carries a small context object
+   with each request and stores the one returned — the designs just
+   shown, an order ID the customer shared, and whether we are waiting
+   for that order ID. Follow-ups like "usme M size hai?" resolve
+   against it instead of making the customer repeat everything. */
+function sanitizeContext(raw) {
+  var ctx = { products: [], orderId: null, awaitingOrderId: false };
+  if (!raw || typeof raw !== "object") return ctx;
+  if (Array.isArray(raw.products)) {
+    raw.products.slice(0, 3).forEach(function (p) {
+      if (p && typeof p.name === "string" && typeof p.url === "string") {
+        ctx.products.push({ name: p.name.slice(0, 80), url: p.url.slice(0, 300) });
+      }
+    });
+  }
+  if (typeof raw.orderId === "string" && raw.orderId.length <= 40) ctx.orderId = raw.orderId;
+  ctx.awaitingOrderId = raw.awaitingOrderId === true;
+  return ctx;
+}
+
+function extractOrderId(message) {
+  var m = String(message || "").match(/\b([A-Za-z]{2,}[-#]?[0-9]{3,}|[0-9]{6,})\b/);
+  return m ? m[1].toUpperCase() : null;
+}
+
+function nextContext(ctx, message, result) {
+  var out = { products: ctx.products, orderId: ctx.orderId, awaitingOrderId: ctx.awaitingOrderId };
+  if (result && result.products && result.products.length) {
+    out.products = result.products.slice(0, 3).map(function (p) { return { name: p.name, url: p.url }; });
+  }
+  var oid = extractOrderId(message);
+  if (oid && (ctx.awaitingOrderId || /order id|id hai|id:/i.test(String(message || "")))) out.orderId = oid;
+  if (out.orderId) out.awaitingOrderId = false;
+  else if (result && result.reply && result.reply.indexOf("order ID") >= 0 && result.reply.indexOf("[[HANDOVER") >= 0) {
+    out.awaitingOrderId = true;
+  }
+  return out;
+}
+
+function isReferential(np) {
+  return np.indexOf("usme") >= 0 || np.indexOf("isme") >= 0 || np.indexOf("uska") >= 0 ||
+    np.indexOf("us ka") >= 0 || np.indexOf("ye wala") >= 0 || np.indexOf("wo wala") >= 0 ||
+    np.indexOf("that one") >= 0 || np.indexOf("this one") >= 0;
+}
+
+/* When the message names no design but the conversation has some,
+   follow-ups resolve against the designs just shown. */
+function resolveMatches(products, np, ctx) {
+  var matches = findMatches(products, np);
+  if (!matches.length && ctx && ctx.products && ctx.products.length) {
+    var followUp = isReferential(np) || np.indexOf(" size ") >= 0 || np.indexOf(" milega ") >= 0 ||
+      np.indexOf(" price ") >= 0 || np.indexOf(" available ") >= 0;
+    if (followUp) {
+      matches = ctx.products.map(function (cp) {
+        for (var i = 0; i < products.length; i++) if (products[i].url === cp.url) return products[i];
+        return null;
+      }).filter(Boolean);
+    }
+  }
+  return matches;
+}
+
 /* Step 2 — fast lane. High-confidence factual questions are answered
    directly from the verified catalogue/policy data, WITHOUT waiting
    for the LLM: exact values, near-instant. Returns null when the
@@ -204,7 +267,7 @@ function listTextStock(items) {
    lane, which adds empathy and the handover marker. The handler
    tries this BEFORE the AI; respond() (the AI-down fallback) also
    tries it first, so behaviour is the same in both paths. */
-function fastRespond(site, products, rawMessage) {
+function fastRespond(site, products, rawMessage, ctx) {
   var message = String(rawMessage || "").trim();
   var np = normPad(message);
   var hing = isHinglish(message, np);
@@ -297,7 +360,7 @@ function fastRespond(site, products, rawMessage) {
     ), products: [] };
   }
 
-  var matches = findMatches(products, np);
+  var matches = resolveMatches(products, np, ctx);
   var wantsList = np.indexOf(" price ") >= 0 || np.indexOf(" prices ") >= 0 ||
     np.indexOf(" list ") >= 0 || np.indexOf(" designs ") >= 0 || np.indexOf(" dikhao ") >= 0 ||
     np.indexOf(" show ") >= 0 || np.indexOf(" sab ") >= 0 || np.indexOf(" all ") >= 0;
@@ -354,7 +417,7 @@ function fastRespond(site, products, rawMessage) {
   return null;
 }
 
-function respond(site, products, rawMessage) {
+function respond(site, products, rawMessage, ctx) {
   var message = String(rawMessage || "").trim();
   var np = normPad(message);
   var hing = isHinglish(message, np);
@@ -365,7 +428,7 @@ function respond(site, products, rawMessage) {
 
   /* Step 2: the fast lane gets the first chance here too, so the
      AI-down fallback answers simple facts exactly like the main path. */
-  var fast = fastRespond(site, products, rawMessage);
+  var fast = fastRespond(site, products, rawMessage, ctx);
   if (fast) return fast;
 
   /* Step 2b — graceful AI-down fallback for complaints and requests.
@@ -453,7 +516,7 @@ function respond(site, products, rawMessage) {
   }
 
   /* specific design match */
-  var matches = findMatches(products, np);
+  var matches = resolveMatches(products, np, ctx);
   var wantsList = np.indexOf(" price ") >= 0 || np.indexOf(" prices ") >= 0 ||
     np.indexOf(" list ") >= 0 || np.indexOf(" designs ") >= 0 || np.indexOf(" dikhao ") >= 0 ||
     np.indexOf(" show ") >= 0 || np.indexOf(" sab ") >= 0 || np.indexOf(" all ") >= 0;
@@ -489,7 +552,7 @@ function respond(site, products, rawMessage) {
 
 /* ------------------ AI brain (Gemini / Groq / OpenRouter) ------------------ */
 
-function buildAiPrompt(site, products, message) {
+function buildAiPrompt(site, products, message, ctx) {
   var isRafa = domainOf(site) === RAFA_DOMAIN;
   var shop = shopNameOf(site, products);
   /* Step 3 — relevant context only: the model gets the products that
@@ -524,6 +587,20 @@ function buildAiPrompt(site, products, message) {
   } else {
     policy = "POLICIES: You do not have this shop's COD/shipping policy details. If a customer asks, say the team will confirm, or point them to the store's website: " + site + ". Never guess a policy.";
   }
+  /* Step 5: what this customer was just shown / has already shared */
+  var contextLine = "";
+  if (ctx && ((ctx.products && ctx.products.length) || ctx.orderId)) {
+    var bits = [];
+    if (ctx.products && ctx.products.length) {
+      bits.push("The customer was just shown these designs: " +
+        ctx.products.map(function (p) { return p.name; }).join("; ") +
+        ". If they say 'usme', 'isme', 'ye wala' or 'that one', they mean the FIRST design in that list.");
+    }
+    if (ctx.orderId) {
+      bits.push("The customer has already shared their order ID: " + ctx.orderId + " — do not ask for it again.");
+    }
+    contextLine = "CONVERSATION CONTEXT: " + bits.join(" ");
+  }
   return [
     "You are a warm, helpful member of the " + shop + " team. Speak as the shop's own team — say 'we' or 'our team', like a person from the shop. Never say or hint that you are an AI, a bot, an assistant or a language model.",
     "LANGUAGE: Reply in the same language and script as the customer's message — English to English, Roman Hinglish to Roman Hinglish, Devanagari Hindi to Devanagari Hindi. If you cannot tell, use English.",
@@ -533,6 +610,7 @@ function buildAiPrompt(site, products, message) {
     lines.join("\n"),
     "Never invent a product, a price, a discount or an offer. If a design is not listed here, say honestly that you will check with the team, and suggest the closest match from the list above.",
     policy,
+    contextLine,
     "When a customer asks about a design or a price, answer with the matching products from the catalogue and include each product's page link exactly as listed.",
     "",
     "DELIVERY / ORDER COMPLAINTS: If a customer's order has not arrived, is late, wrong or damaged, apologise sincerely first — never argue. Ask for their order ID if they haven't shared it, and tell them the team will check on priority and call them. Never invent a tracking status or a delivery date. End your reply with this exact marker on its own final line: [[HANDOVER: delivery complaint]]",
@@ -568,13 +646,13 @@ function logAiFailure(providerName, status, detail) {
    Every failed attempt is logged via logAiFailure with the model
    name in the detail. Returns { reply, products } on the first
    success, or null when every model fails. Never throws. */
-async function geminiAnswer(site, products, message, key, deadline) {
+async function geminiAnswer(site, products, message, key, deadline, ctx) {
   var f = globalThis.fetch;
   if (!f) {
     logAiFailure("gemini", null, "fetch is not available in this runtime");
     return null;
   }
-  var systemText = buildAiPrompt(site, products, message);
+  var systemText = buildAiPrompt(site, products, message, ctx);
   var userText = String(message);
   for (var m = 0; m < GEMINI_MODELS.length; m++) {
     var model = GEMINI_MODELS[m];
@@ -652,7 +730,7 @@ async function geminiAnswer(site, products, message, key, deadline) {
 /* Groq via its OpenAI-compatible chat-completions endpoint.
    Returns { reply, products } or null on any failure — every failure
    is logged via logAiFailure. Never throws. */
-async function groqAnswer(site, products, message, key) {
+async function groqAnswer(site, products, message, key, ctx) {
   var f = globalThis.fetch;
   if (!f) {
     logAiFailure("groq", null, "fetch is not available in this runtime");
@@ -669,7 +747,7 @@ async function groqAnswer(site, products, message, key) {
         temperature: 0.4,
         max_tokens: AI_MAX_OUTPUT_TOKENS,
         messages: [
-          { role: "system", content: buildAiPrompt(site, products, message) },
+          { role: "system", content: buildAiPrompt(site, products, message, ctx) },
           { role: "user", content: String(message) }
         ]
       }),
@@ -720,7 +798,7 @@ async function groqAnswer(site, products, message, key) {
    inside the caller's time budget. Returns { reply, products } or
    null when every model failed or the budget ran out — every failure
    is logged via logAiFailure. Never throws. */
-async function openrouterAnswer(site, products, message, key, deadline) {
+async function openrouterAnswer(site, products, message, key, deadline, ctx) {
   var f = globalThis.fetch;
   if (!f) {
     logAiFailure("openrouter", null, "fetch is not available in this runtime");
@@ -732,7 +810,7 @@ async function openrouterAnswer(site, products, message, key, deadline) {
       logAiFailure("openrouter", null, "time budget exhausted before model=" + OPENROUTER_MODELS[m]);
       return null;
     }
-    var r = await openrouterTryModel(site, products, message, key, OPENROUTER_MODELS[m],
+    var r = await openrouterTryModel(site, products, message, key, ctx, OPENROUTER_MODELS[m],
       Math.min(AI_ATTEMPT_TIMEOUT_MS, remaining));
     if (r) return r;
   }
@@ -745,13 +823,13 @@ async function openrouterAnswer(site, products, message, key, deadline) {
    chain before the fallback answered. Now a retryable failure simply
    moves on to the next model, and the total budget in aiAnswer caps
    the whole phase. */
-async function openrouterTryModel(site, products, message, key, model, timeoutMs) {
-  var r = await openrouterAttempt(site, products, message, key, model, timeoutMs);
+async function openrouterTryModel(site, products, message, key, ctx, model, timeoutMs) {
+  var r = await openrouterAttempt(site, products, message, key, ctx, model, timeoutMs);
   if (r && !r.retryable) return r;
   return null;
 }
 
-async function openrouterAttempt(site, products, message, key, model, timeoutMs) {
+async function openrouterAttempt(site, products, message, key, ctx, model, timeoutMs) {
   var f = globalThis.fetch;
   var limit = timeoutMs || AI_TIMEOUT_MS;
   var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
@@ -765,7 +843,7 @@ async function openrouterAttempt(site, products, message, key, model, timeoutMs)
         temperature: 0.4,
         max_tokens: AI_MAX_OUTPUT_TOKENS,
         messages: [
-          { role: "system", content: buildAiPrompt(site, products, message) },
+          { role: "system", content: buildAiPrompt(site, products, message, ctx) },
           { role: "user", content: String(message) }
         ]
       }),
@@ -873,7 +951,7 @@ function shieldCheck(site, products, message, reply) {
 /* Returns { reply, products } from an AI provider, or null when no
    key is set or every provider fails — the caller then uses the
    deterministic responder. Never throws. */
-async function aiAnswer(site, products, message) {
+async function aiAnswer(site, products, message, ctx) {
   /* One shared deadline for the whole AI phase (Step 1): providers
      may not stack their worst cases on top of each other while the
      customer waits. Success is logged as AI_REPLY with the provider
@@ -891,12 +969,12 @@ async function aiAnswer(site, products, message) {
   }
   if (process.env.OPENROUTER_API_KEY) {
     var t0 = Date.now();
-    var o = guard("openrouter", await openrouterAnswer(site, products, message, process.env.OPENROUTER_API_KEY, deadline));
+    var o = guard("openrouter", await openrouterAnswer(site, products, message, process.env.OPENROUTER_API_KEY, deadline, ctx));
     if (o) { console.log("AI_REPLY provider=openrouter ms=" + (Date.now() - t0)); return o; }
   }
   if (process.env.GROQ_API_KEY && Date.now() < deadline) {
     var t1 = Date.now();
-    var q = guard("groq", await groqAnswer(site, products, message, process.env.GROQ_API_KEY));
+    var q = guard("groq", await groqAnswer(site, products, message, process.env.GROQ_API_KEY, ctx));
     if (q) { console.log("AI_REPLY provider=groq ms=" + (Date.now() - t1)); return q; }
   }
   /* Gemini stays OUT of the normal path: its key 403s on the
@@ -904,7 +982,7 @@ async function aiAnswer(site, products, message) {
      budget. It runs only when explicitly re-enabled. */
   if (process.env.GEMINI_API_KEY && process.env.GEMINI_FALLBACK === "1" && Date.now() < deadline) {
     var t2 = Date.now();
-    var g = guard("gemini", await geminiAnswer(site, products, message, process.env.GEMINI_API_KEY, deadline));
+    var g = guard("gemini", await geminiAnswer(site, products, message, process.env.GEMINI_API_KEY, deadline, ctx));
     if (g) { console.log("AI_REPLY provider=gemini ms=" + (Date.now() - t2)); return g; }
   }
   return null; /* no key set — deterministic mode is intended, not a failure */
@@ -962,16 +1040,32 @@ async function handler(req, res) {
   var message = String((body && body.message) || "").trim();
   if (!site) return sendJson(res, 400, { reply: "I don't know which shop's website this is — please check the widget setup.", products: [] });
   if (!message) return sendJson(res, 400, { reply: "Please type a message.", products: [] });
+  var ctxIn = sanitizeContext(body && body.context);
+  function withCtx(result) {
+    return { reply: result.reply, products: result.products || [], context: nextContext(ctxIn, message, result) };
+  }
   try {
     var products = await getProducts(site);
+    /* Step 5: the customer is answering our order-ID question — note
+       the ID and confirm, instead of treating it as a new question. */
+    if (ctxIn.awaitingOrderId) {
+      var oidNow = extractOrderId(message);
+      if (oidNow && message.length <= 60 && !/(cancel|return|exchange|refund)/i.test(message)) {
+        var hingNow = isHinglish(message, normPad(message));
+        var capReply = hingNow
+          ? "Dhanyavaad — aapka order ID " + oidNow + " note kar liya hai. Hamari team priority par check karke aapko call karke update degi.\n[[HANDOVER: delivery complaint]]"
+          : "Thank you — I've noted your order ID " + oidNow + ". Our team will check on priority and call you with an update.\n[[HANDOVER: delivery complaint]]";
+        return sendJson(res, 200, withCtx({ reply: capReply, products: [] }));
+      }
+    }
     /* Step 2 routing: clear factual questions are answered instantly
        from verified data; everything else goes to the AI lane; the
        deterministic responder remains the final fallback. */
-    var fast = fastRespond(site, products, message);
-    if (fast) return sendJson(res, 200, fast);
-    var ai = await aiAnswer(site, products, message);
-    if (ai) return sendJson(res, 200, ai);
-    return sendJson(res, 200, respond(site, products, message));
+    var fast = fastRespond(site, products, message, ctxIn);
+    if (fast) return sendJson(res, 200, withCtx(fast));
+    var ai = await aiAnswer(site, products, message, ctxIn);
+    if (ai) return sendJson(res, 200, withCtx(ai));
+    return sendJson(res, 200, withCtx(respond(site, products, message, ctxIn)));
   } catch (e) {
     return sendJson(res, 200, {
       reply: "Sorry — I couldn't reach the store's catalogue just now. Please try again in a moment.",
