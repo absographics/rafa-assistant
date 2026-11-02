@@ -94,12 +94,36 @@ function parseFeed(data, site) {
     if (!v || v.price == null) continue;
     var num = Math.round(parseFloat(String(v.price)));
     if (!isFinite(num) || num <= 0) continue;
+    /* sizes from the variant option named "Size" (some products,
+       e.g. unstitched suits, have no size option — then sizes stays
+       empty and no sizes are ever claimed for them) */
+    var sizes = [];
+    var sizePos = 0;
+    if (Array.isArray(p.options)) {
+      for (var oi = 0; oi < p.options.length; oi++) {
+        if (p.options[oi] && /size/i.test(String(p.options[oi].name || ""))) {
+          sizePos = Number(p.options[oi].position) || (oi + 1);
+          break;
+        }
+      }
+    }
+    if (sizePos && Array.isArray(p.variants)) {
+      for (var vi = 0; vi < p.variants.length; vi++) {
+        var sv = p.variants[vi] ? p.variants[vi]["option" + sizePos] : null;
+        if (sv && sizes.indexOf(String(sv)) < 0) sizes.push(String(sv));
+      }
+    }
+    /* short plain-text details from the product description */
+    var desc = String(p.body_html || "").replace(/<[^>]*>/g, " ").replace(/&[a-z]+;/gi, " ").replace(/\s+/g, " ").trim().slice(0, 180);
     out.push({
       name: String(p.title),
       price: formatPrice(String(num)),
       url: site + "/products/" + p.handle,
       vendor: p.vendor ? String(p.vendor) : "",
-      keywords: keywordsOf(p.title)
+      keywords: keywordsOf(p.title),
+      sizes: sizes,
+      desc: desc,
+      soldout: !v.available
     });
   }
   return out.length ? out : null;
@@ -255,10 +279,14 @@ function buildAiPrompt(site, products) {
   var isRafa = domainOf(site) === RAFA_DOMAIN;
   var shop = shopNameOf(site, products);
   var lines = products.map(function (p) {
-    return "- " + p.name + " — ₹" + p.price + " — " + p.url;
+    var s = "- " + p.name + " — ₹" + p.price;
+    if (p.soldout) s += " — SOLD OUT at the moment";
+    if (p.sizes && p.sizes.length) s += " — sizes: " + p.sizes.join(", ");
+    if (p.desc) s += " — details: " + p.desc;
+    return s + " — " + p.url;
   });
   var policy = isRafa
-    ? "POLICIES (verified for this shop — state them exactly): Cash on Delivery (COD) is available. Shipping is free on prepaid orders; for COD orders, shipping charges are calculated at checkout. Orders are placed only on the website."
+    ? "ABOUT THE SHOP (verified from the shop's own website — state these facts exactly, never soften or invent beyond them): Rafa Collection — women's ethnic wear since 2013: Pakistani suits, Farshi salwar suits, Anarkali gowns, kurtis, co-ord sets and kaftans. Orders are placed ONLY on the website (rafacollection.com) — never on WhatsApp or in chat. The shop is in Old Panvel, Navi Mumbai.\nPAYMENTS & COD: Cash on Delivery (COD) is available. Prepaid orders get FREE shipping; for COD orders, shipping charges are calculated at checkout.\nSHIPPING & DELIVERY: Orders are dispatched within 3 working days and delivered in 7–14 working days anywhere in India, via couriers like Delhivery, Xpressbees, Blue Dart and FedEx. Delivery is attempted on business days only (not Sundays or national holidays). You cannot track a parcel yourself — for a delivery problem, follow the complaint flow below.\nCANCELLING AN ORDER: A customer can cancel within 6 hours of placing the order (Mon–Sat, 10 AM–7 PM) on WhatsApp 8369845866 or by email to support@rafacollection.com. No cancellation is possible after dispatch. Any amount paid is refunded to the same payment mode.\nRETURNS & EXCHANGES (strict — state exactly, never soften): NO return or exchange for size issues, minor colour differences (camera/light), or simply not liking the product. Discounted/sale products cannot be returned or exchanged. A return/exchange is possible ONLY when the item received is damaged, defective or the wrong item: the customer must inform the shop within 48 hours of delivery and must have a full, uncut parcel-opening video showing the defect. The product must be unused, unwashed, with tags and original packaging. There are NO money refunds — the customer gets an exchange or a coupon code of the dress amount. Pickup is arranged by the team in 1–2 working days after the request is accepted.\nCONTACTS (share when a customer asks to reach the team): WhatsApp 8369845866, Call 08048795138, Email support@rafacollection.com, Shop: Shop no 3, Nawab Building, Patel Mohalla, Old Panvel, Navi Mumbai 410206."
     : "POLICIES: You do not have this shop's COD/shipping policy details. If a customer asks, say the team will confirm, or point them to the store's website: " + site + ". Never guess a policy.";
   return [
     "You are a warm, helpful member of the " + shop + " team. Speak as the shop's own team — say 'we' or 'our team', like a person from the shop. Never say or hint that you are an AI, a bot, an assistant or a language model.",
