@@ -1,5 +1,6 @@
 "use strict";
 /* ABSO Assistant — WhatsApp webhook (Vercel serverless function).
+   (2026-11-02 redeploy marker 2 — fresh API-Setup token saved in Vercel.)
    Receives WhatsApp Cloud API events for the connected number.
 
    GET  -> Meta webhook verification (hub.challenge) using
