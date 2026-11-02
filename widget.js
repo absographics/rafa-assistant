@@ -32,6 +32,13 @@
     if (scriptOrigin === window.location.origin) apiUrl = "/api/chat";
   } catch (e) {}
 
+  /* Conversation memory (Step 5): the server is stateless — this
+     widget carries the small context object it returns and sends it
+     back with the next message, so follow-ups ("usme M size hai?")
+     resolve without the customer repeating everything. */
+  var chatCtx = null;
+  try { chatCtx = JSON.parse(localStorage.getItem("abso_assistant_ctx") || "null"); } catch (e) { chatCtx = null; }
+
   var MAROON = "#6E1423";
 
   var css = [
@@ -175,10 +182,14 @@
     fetch(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ site: site, message: text })
+      body: JSON.stringify({ site: site, message: text, context: chatCtx || undefined })
     }).then(function (res) {
       return res.json();
     }).then(function (data) {
+      if (data && data.context) {
+        chatCtx = data.context;
+        try { localStorage.setItem("abso_assistant_ctx", JSON.stringify(chatCtx)); } catch (e) {}
+      }
       thinking.textContent = (data && data.reply) || "Sorry, I didn't get that — please try again.";
       addProducts(data && data.products);
     }).catch(function () {
