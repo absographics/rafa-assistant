@@ -190,6 +190,170 @@ function listText(items) {
   return items.map(function (p) { return "• " + p.name + " — ₹" + p.price; }).join("\n");
 }
 
+function listTextStock(items) {
+  return items.map(function (p) {
+    return "• " + p.name + " — ₹" + p.price + (p.soldout ? " (sold out)" : "");
+  }).join("\n");
+}
+
+/* Step 2 — fast lane. High-confidence factual questions are answered
+   directly from the verified catalogue/policy data, WITHOUT waiting
+   for the LLM: exact values, near-instant. Returns null when the
+   question is not a clear factual one (complaints, returns, damaged
+   items, multi-part or ambiguous questions) — those stay with the AI
+   lane, which adds empathy and the handover marker. The handler
+   tries this BEFORE the AI; respond() (the AI-down fallback) also
+   tries it first, so behaviour is the same in both paths. */
+function fastRespond(site, products, rawMessage) {
+  var message = String(rawMessage || "").trim();
+  var np = normPad(message);
+  var hing = isHinglish(message, np);
+  var isRafa = domainOf(site) === RAFA_DOMAIN;
+  var shop = shopNameOf(site, products);
+  function pick(en, hi) { return hing ? hi : en; }
+
+  /* complaints and policy disputes are never fast-lane */
+  if (np.indexOf("nahi aaya") >= 0 || np.indexOf("nahi aya") >= 0 || np.indexOf("nahi aayi") >= 0 ||
+      np.indexOf("aane wala tha") >= 0 || np.indexOf("not delivered") >= 0 ||
+      np.indexOf(" return ") >= 0 || np.indexOf(" exchange ") >= 0 || np.indexOf(" refund ") >= 0 ||
+      np.indexOf(" damaged ") >= 0 || np.indexOf(" defect") >= 0 || np.indexOf("pasand nahi") >= 0 ||
+      np.indexOf(" wrong item") >= 0 || np.indexOf(" galat ") >= 0) {
+    return null;
+  }
+
+  /* COD */
+  if (np.indexOf(" cod ") >= 0 || np.indexOf(" cash on delivery ") >= 0) {
+    if (!isRafa) return null;
+    return { reply: pick(
+      "COD is available on " + shop + "'s website — shipping for COD orders is calculated at checkout. You can order here: " + site,
+      "COD " + shop + " ki website par available hai — COD orders ki shipping checkout par calculate hoti hai. Order yahan se karein: " + site
+    ), products: [] };
+  }
+
+  /* shipping charges */
+  if (np.indexOf(" delivery charge") >= 0 || np.indexOf(" shipping charge") >= 0 ||
+      (np.indexOf(" shipping ") >= 0 && np.indexOf(" free ") >= 0)) {
+    if (!isRafa) return null;
+    return { reply: pick(
+      "Shipping is free on prepaid orders at " + shop + "; for COD orders the shipping charge is calculated at checkout.",
+      "Prepaid orders par shipping free hai; COD orders ki shipping checkout par calculate hoti hai."
+    ), products: [] };
+  }
+
+  /* delivery timeline — "when will it come", not a complaint */
+  var asksWhen = np.indexOf(" kab ") >= 0 || np.indexOf(" kitne din ") >= 0 ||
+    np.indexOf(" kitna time ") >= 0 || np.indexOf(" how long ") >= 0 || np.indexOf(" delivery time ") >= 0;
+  var deliveryContext = np.indexOf(" deliver") >= 0 || np.indexOf(" dispatch ") >= 0 ||
+    np.indexOf(" parcel ") >= 0 || np.indexOf(" order ") >= 0;
+  if (isRafa && asksWhen && deliveryContext) {
+    return { reply: pick(
+      "Orders are dispatched within 3 working days and delivered in 7–14 working days, on business days only.",
+      "Order 3 working days me dispatch hota hai, aur delivery 7–14 working days me hoti hai — delivery sirf business days par hoti hai."
+    ), products: [] };
+  }
+
+  /* cancellation window */
+  if (np.indexOf(" cancel ") >= 0 || np.indexOf(" cancellation ") >= 0) {
+    if (!isRafa) return null;
+    return { reply: pick(
+      "You can cancel within 6 hours of placing the order (Mon–Sat, 10 AM–7 PM) on WhatsApp 8369845866 or by email to support@rafacollection.com. Cancellation is not possible after dispatch.",
+      "Order cancel sirf 6 hours ke andar ho sakta hai (Mon–Sat, 10 AM–7 PM) — WhatsApp 8369845866 par ya support@rafacollection.com par email karke. Dispatch ke baad cancel nahi hota."
+    ), products: [] };
+  }
+
+  /* contact details */
+  if (np.indexOf(" number ") >= 0 || np.indexOf(" contact ") >= 0 ||
+      np.indexOf(" phone ") >= 0 || np.indexOf(" email ") >= 0) {
+    if (!isRafa) return null;
+    return { reply: pick(
+      "You can reach our team on WhatsApp 8369845866, by call on 08048795138, or by email at support@rafacollection.com.",
+      "Team se WhatsApp 8369845866 par, call 08048795138 par, ya support@rafacollection.com par email karke baat ho sakti hai."
+    ), products: [] };
+  }
+
+  /* shop address */
+  if (np.indexOf(" address ") >= 0 || np.indexOf(" location ") >= 0) {
+    if (!isRafa) return null;
+    return { reply: pick(
+      "Our shop is at Shop no 3, Nawab Building, Patel Mohalla, Old Panvel, Navi Mumbai 410206.",
+      "Hamari dukaan Shop no 3, Nawab Building, Patel Mohalla, Old Panvel, Navi Mumbai 410206 par hai."
+    ), products: [] };
+  }
+
+  /* how to order */
+  if (np.indexOf(" order ") >= 0 || np.indexOf(" buy ") >= 0 || np.indexOf(" kharid") >= 0 || np.indexOf(" lena ") >= 0) {
+    if (np.indexOf(" kaise ") < 0 && np.indexOf(" how ") < 0 && np.indexOf(" karna ") < 0 && np.indexOf(" karein ") < 0) return null;
+    return { reply: pick(
+      "Ordering is only through the website: " + site + " — open a design you like and place your order there." + (isRafa ? " COD is available too." : ""),
+      "Order sirf website se hota hai: " + site + " — jo design pasand aaye use khol kar wahi order kar dein." + (isRafa ? " COD bhi available hai." : "")
+    ), products: [] };
+  }
+
+  /* greetings */
+  if (/^(hi|hii+|hello|hey|salaam|namaste|aoa)\b/i.test(message) && message.length <= 24) {
+    return { reply: pick(
+      "Hello, and welcome to " + shop + "! I can help you with designs and prices from the shop's own catalogue — tell me a design name, or ask for the price list.",
+      "Hello, " + shop + " me khush aamdeed! Mai designs aur prices me madad kar sakta hu — kisi design ka naam bataiye, ya price list mangiye."
+    ), products: [] };
+  }
+
+  var matches = findMatches(products, np);
+  var wantsList = np.indexOf(" price ") >= 0 || np.indexOf(" prices ") >= 0 ||
+    np.indexOf(" list ") >= 0 || np.indexOf(" designs ") >= 0 || np.indexOf(" dikhao ") >= 0 ||
+    np.indexOf(" show ") >= 0 || np.indexOf(" sab ") >= 0 || np.indexOf(" all ") >= 0;
+
+  /* size availability for a matched design — exact from variant data */
+  var sizeMatch = np.match(/ (xxl|xl|xs) /) || np.match(/ ([sml]) size /) || np.match(/ size ([sml]) /);
+  if (sizeMatch && matches.length) {
+    var reqSize = sizeMatch[1].toUpperCase();
+    var withSize = matches.filter(function (p) {
+      return (p.sizes || []).some(function (s) { return String(s).toUpperCase() === reqSize; });
+    });
+    if (withSize.length) {
+      var topW = withSize.slice(0, 6);
+      return {
+        reply: pick("Yes — these designs are available in size " + reqSize + ":\n",
+                    "Ha, ye designs " + reqSize + " size me available hain:\n") + listTextStock(topW) +
+          pick("\nTap a design to view it on the website.", "\nKisi design par tap karke website par dekhein."),
+        products: topW.map(pub)
+      };
+    }
+    var avail = (matches[0].sizes || []).join(", ");
+    return {
+      reply: pick("Size " + reqSize + " is not available in " + matches[0].name + "." + (avail ? " Available sizes: " + avail + "." : ""),
+                  reqSize + " size " + matches[0].name + " me available nahi hai." + (avail ? " Available sizes: " + avail + "." : "")),
+      products: matches.slice(0, 3).map(pub)
+    };
+  }
+
+  /* design match with a price / list / availability intent */
+  if (matches.length && (wantsList || np.indexOf(" price") >= 0 || np.indexOf(" rate ") >= 0 ||
+      np.indexOf(" cost ") >= 0 || np.indexOf(" available ") >= 0 || np.indexOf(" milega ") >= 0)) {
+    var top = matches.slice(0, 6);
+    return {
+      reply: pick("Here is what I found for you:\n", "Ye rahe designs jo mile:\n") + listTextStock(top) +
+        pick("\nTap a design to view it on the website.", "\nKisi design par tap karke website par dekhein."),
+      products: top.map(pub)
+    };
+  }
+
+  /* price list / catalogue browse */
+  if (wantsList || np.indexOf(" price") >= 0 || np.indexOf(" rate ") >= 0 || np.indexOf(" cost ") >= 0 || np.indexOf(" collection ") >= 0) {
+    var items = products.slice(0, MAX_LIST);
+    var more = products.length > MAX_LIST
+      ? pick("\n…and " + (products.length - MAX_LIST) + " more on the website: " + site,
+             "\n…aur " + (products.length - MAX_LIST) + " designs website par: " + site)
+      : "";
+    return {
+      reply: pick("Here are some designs with prices:\n", "Kuch designs prices ke saath:\n") + listTextStock(items) + more +
+        pick("\nTell me a design name for its page link.", "\nKisi design ka naam bataiye, uski page link bhej dunga."),
+      products: items.map(pub)
+    };
+  }
+
+  return null;
+}
+
 function respond(site, products, rawMessage) {
   var message = String(rawMessage || "").trim();
   var np = normPad(message);
@@ -198,6 +362,11 @@ function respond(site, products, rawMessage) {
   var shop = shopNameOf(site, products);
 
   function pick(en, hi) { return hing ? hi : en; }
+
+  /* Step 2: the fast lane gets the first chance here too, so the
+     AI-down fallback answers simple facts exactly like the main path. */
+  var fast = fastRespond(site, products, rawMessage);
+  if (fast) return fast;
 
   /* COD / shipping — policy text only where verified (Rafa); else honest */
   if (np.indexOf(" cod ") >= 0 || np.indexOf(" cash on delivery ") >= 0) {
@@ -661,6 +830,11 @@ async function handler(req, res) {
   if (!message) return sendJson(res, 400, { reply: "Please type a message.", products: [] });
   try {
     var products = await getProducts(site);
+    /* Step 2 routing: clear factual questions are answered instantly
+       from verified data; everything else goes to the AI lane; the
+       deterministic responder remains the final fallback. */
+    var fast = fastRespond(site, products, message);
+    if (fast) return sendJson(res, 200, fast);
     var ai = await aiAnswer(site, products, message);
     if (ai) return sendJson(res, 200, ai);
     return sendJson(res, 200, respond(site, products, message));
@@ -675,5 +849,6 @@ async function handler(req, res) {
 module.exports = handler;
 module.exports.handler = handler;
 module.exports._respond = respond;
+module.exports._fastRespond = fastRespond;
 module.exports._buildAiPrompt = buildAiPrompt;
 module.exports._resetCache = function () { CACHE = {}; };
