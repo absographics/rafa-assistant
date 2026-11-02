@@ -10,17 +10,14 @@
    No dependencies.
 
    AI brain: replies come from an AI provider with the live catalogue
-   as the only price source. Gemini goes first when GEMINI_API_KEY is
-   set — via its native generateContent API, trying a chain of models
-   (gemini-flash-latest, gemini-3.8-flash, gemini-3.6-flash,
-   gemini-3-flash-preview — the models this account's AI Studio picker
-   actually offers), because model availability varies per key and
-   the OpenAI-compatible layer rejected models this key can use
-   natively. Groq (llama-3.3-70b-versatile, OpenAI-compatible
-   endpoint) is the second provider, used when GROQ_API_KEY is set.
-   OpenRouter (free-model chain, also
-   OpenAI-compatible) is the third, used when OPENROUTER_API_KEY is
-   set — a backup for when Gemini's free tier is unavailable.
+   as the only price source. OpenRouter's free-model chain is the
+   primary provider (one attempt per model, then move on — a busy
+   free model is never retried in place, and the whole AI phase has
+   a hard time budget). Groq (llama-3.3-70b-versatile,
+   OpenAI-compatible endpoint) is an optional second provider when
+   GROQ_API_KEY is set. Gemini's native chain runs only when
+   GEMINI_FALLBACK=1 — its free tier is blocked for this account
+   (every call 403s), so it stays out of the normal path.
    If no key is set, or every AI attempt errors or times out, the
    deterministic responder below answers instead — the endpoint never
    breaks. GET /api/chat?health=1 -> { ai: true|false } reports only
@@ -34,8 +31,14 @@ var GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 var GROQ_MODEL = "llama-3.3-70b-versatile";
 var OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 var OPENROUTER_MODELS = ["google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "nvidia/nemotron-3.5-super-vl:free"];
-var OPENROUTER_RETRY_DELAY_MS = 3000;
 var AI_TIMEOUT_MS = 12000;
+/* Step 1 (zero-budget speed fix): the whole AI phase gets a hard time
+   budget and each OpenRouter attempt a shorter timeout. When the
+   budget ends, the deterministic responder answers instead of the
+   customer waiting through a retry storm. */
+var AI_ATTEMPT_TIMEOUT_MS = 8000;
+var AI_TOTAL_BUDGET_MS = 20000;
+var AI_MAX_OUTPUT_TOKENS = 220;
 var CACHE_MS = 60 * 1000;
 var FEED_LIMIT = 100;
 var MAX_LIST = 8;
@@ -305,11 +308,11 @@ function buildAiPrompt(site, products) {
   ].join("\n");
 }
 
-/* Provider order per request: Gemini (native generateContent API,
-   model chain) first when GEMINI_API_KEY is set, then Groq
-   (OpenAI-compatible endpoint) when GROQ_API_KEY is set, then
-   OpenRouter (OpenAI-compatible endpoint, free model) when
-   OPENROUTER_API_KEY is set, otherwise the deterministic responder. */
+/* Provider order per request (Step 1): OpenRouter free chain first
+   (one attempt per model, shared time budget), then Groq when
+   GROQ_API_KEY is set, then Gemini's native chain ONLY when
+   GEMINI_FALLBACK=1 (its free tier 403s for this account), otherwise
+   the deterministic responder. */
 
 /* One-line failure log for the AI call path (surfaces in Vercel's
    runtime logs). Carries the provider name, the HTTP status when
@@ -332,7 +335,7 @@ function logAiFailure(providerName, status, detail) {
    Every failed attempt is logged via logAiFailure with the model
    name in the detail. Returns { reply, products } on the first
    success, or null when every model fails. Never throws. */
-async function geminiAnswer(site, products, message, key) {
+async function geminiAnswer(site, products, message, key, deadline) {
   var f = globalThis.fetch;
   if (!f) {
     logAiFailure("gemini", null, "fetch is not available in this runtime");
@@ -342,8 +345,14 @@ async function geminiAnswer(site, products, message, key) {
   var userText = String(message);
   for (var m = 0; m < GEMINI_MODELS.length; m++) {
     var model = GEMINI_MODELS[m];
+    var remaining = deadline ? deadline - Date.now() : GEMINI_ATTEMPT_TIMEOUT_MS;
+    if (remaining <= 0) {
+      logAiFailure("gemini", null, "time budget exhausted before model=" + model);
+      break;
+    }
+    var limit = Math.min(GEMINI_ATTEMPT_TIMEOUT_MS, remaining);
     var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
-    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, GEMINI_ATTEMPT_TIMEOUT_MS) : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, limit) : null;
     try {
       var res = await f(GEMINI_API_BASE + model + ":generateContent", {
         method: "POST",
@@ -351,7 +360,7 @@ async function geminiAnswer(site, products, message, key) {
         body: JSON.stringify({
           system_instruction: { parts: [{ text: systemText }] },
           contents: [{ role: "user", parts: [{ text: userText }] }],
-          generationConfig: { temperature: 0.4 }
+          generationConfig: { temperature: 0.4, maxOutputTokens: AI_MAX_OUTPUT_TOKENS }
         }),
         signal: ctrl ? ctrl.signal : undefined
       });
@@ -398,7 +407,7 @@ async function geminiAnswer(site, products, message, key) {
     } catch (e) {
       var isTimeout = !!(e && (e.name === "AbortError" || e.code === 20));
       logAiFailure("gemini", null,
-        "model=" + model + " " + (isTimeout ? "timeout after " + GEMINI_ATTEMPT_TIMEOUT_MS + "ms — " : "") +
+        "model=" + model + " " + (isTimeout ? "timeout after " + limit + "ms — " : "") +
         ((e && e.message) || String(e)));
     } finally {
       if (timer) clearTimeout(timer);
@@ -425,6 +434,7 @@ async function groqAnswer(site, products, message, key) {
       body: JSON.stringify({
         model: GROQ_MODEL,
         temperature: 0.4,
+        max_tokens: AI_MAX_OUTPUT_TOKENS,
         messages: [
           { role: "system", content: buildAiPrompt(site, products) },
           { role: "user", content: String(message) }
@@ -471,46 +481,48 @@ async function groqAnswer(site, products, message, key) {
 }
 
 /* OpenRouter via its OpenAI-compatible chat-completions endpoint.
-   Third provider in the order — used when OPENROUTER_API_KEY is set
-   and the providers above it are unset or have failed. Tries each
+   Primary provider — used when OPENROUTER_API_KEY is set. Tries each
    free model in OPENROUTER_MODELS in order (free slugs get retired
-   without notice — the chain absorbs that). Returns
-   { reply, products } or null when every model failed — every
-   failure is logged via logAiFailure. Never throws. */
-async function openrouterAnswer(site, products, message, key) {
+   without notice — the chain absorbs that), ONE attempt per model,
+   inside the caller's time budget. Returns { reply, products } or
+   null when every model failed or the budget ran out — every failure
+   is logged via logAiFailure. Never throws. */
+async function openrouterAnswer(site, products, message, key, deadline) {
   var f = globalThis.fetch;
   if (!f) {
     logAiFailure("openrouter", null, "fetch is not available in this runtime");
     return null;
   }
   for (var m = 0; m < OPENROUTER_MODELS.length; m++) {
-    var r = await openrouterTryModel(site, products, message, key, OPENROUTER_MODELS[m]);
+    var remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      logAiFailure("openrouter", null, "time budget exhausted before model=" + OPENROUTER_MODELS[m]);
+      return null;
+    }
+    var r = await openrouterTryModel(site, products, message, key, OPENROUTER_MODELS[m],
+      Math.min(AI_ATTEMPT_TIMEOUT_MS, remaining));
     if (r) return r;
   }
   return null;
 }
 
-/* Retries one model up to 3 times when the free upstream is
-   momentarily rate-limited (429) or overloaded (empty reply) —
-   the provider's own advice is "retry shortly". Waits
-   OPENROUTER_RETRY_DELAY_MS between attempts. A hard failure
-   (any other error) stops immediately. */
-async function openrouterTryModel(site, products, message, key, model) {
-  for (var attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) {
-      await new Promise(function (resolve) { setTimeout(resolve, OPENROUTER_RETRY_DELAY_MS); });
-    }
-    var r = await openrouterAttempt(site, products, message, key, model);
-    if (r && !r.retryable) return r;
-    if (!r) return null;
-  }
+/* ONE attempt per model (Step 1 speed fix). The old version retried a
+   rate-limited or overloaded model 3 times with 3s waits — a busy
+   free upstream turned that into ~24s of dead waiting across the
+   chain before the fallback answered. Now a retryable failure simply
+   moves on to the next model, and the total budget in aiAnswer caps
+   the whole phase. */
+async function openrouterTryModel(site, products, message, key, model, timeoutMs) {
+  var r = await openrouterAttempt(site, products, message, key, model, timeoutMs);
+  if (r && !r.retryable) return r;
   return null;
 }
 
-async function openrouterAttempt(site, products, message, key, model) {
+async function openrouterAttempt(site, products, message, key, model, timeoutMs) {
   var f = globalThis.fetch;
+  var limit = timeoutMs || AI_TIMEOUT_MS;
   var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
-  var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, AI_TIMEOUT_MS) : null;
+  var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, limit) : null;
   try {
     var res = await f(OPENROUTER_URL, {
       method: "POST",
@@ -518,6 +530,7 @@ async function openrouterAttempt(site, products, message, key, model) {
       body: JSON.stringify({
         model: model,
         temperature: 0.4,
+        max_tokens: AI_MAX_OUTPUT_TOKENS,
         messages: [
           { role: "system", content: buildAiPrompt(site, products) },
           { role: "user", content: String(message) }
@@ -556,7 +569,7 @@ async function openrouterAttempt(site, products, message, key, model) {
     var isTimeout = !!(e && (e.name === "AbortError" || e.code === 20));
     logAiFailure("openrouter", null,
       "model=" + model + " " +
-      (isTimeout ? "timeout after " + AI_TIMEOUT_MS + "ms — " : "") +
+      (isTimeout ? "timeout after " + limit + "ms — " : "") +
       ((e && e.message) || String(e)));
     return null;
   } finally {
@@ -568,20 +581,28 @@ async function openrouterAttempt(site, products, message, key, model) {
    key is set or every provider fails — the caller then uses the
    deterministic responder. Never throws. */
 async function aiAnswer(site, products, message) {
-  /* OpenRouter first: it is the provider that actually answers
-     today (Gemini's key 403s on the free-tier block every time —
-     it stays in the chain only as a later fallback). */
+  /* One shared deadline for the whole AI phase (Step 1): providers
+     may not stack their worst cases on top of each other while the
+     customer waits. Success is logged as AI_REPLY with the provider
+     and elapsed time, so stage timings are visible in Vercel logs. */
+  var deadline = Date.now() + AI_TOTAL_BUDGET_MS;
   if (process.env.OPENROUTER_API_KEY) {
-    var o = await openrouterAnswer(site, products, message, process.env.OPENROUTER_API_KEY);
-    if (o) return o;
+    var t0 = Date.now();
+    var o = await openrouterAnswer(site, products, message, process.env.OPENROUTER_API_KEY, deadline);
+    if (o) { console.log("AI_REPLY provider=openrouter ms=" + (Date.now() - t0)); return o; }
   }
-  if (process.env.GEMINI_API_KEY) {
-    var g = await geminiAnswer(site, products, message, process.env.GEMINI_API_KEY);
-    if (g) return g;
-  }
-  if (process.env.GROQ_API_KEY) {
+  if (process.env.GROQ_API_KEY && Date.now() < deadline) {
+    var t1 = Date.now();
     var q = await groqAnswer(site, products, message, process.env.GROQ_API_KEY);
-    if (q) return q;
+    if (q) { console.log("AI_REPLY provider=groq ms=" + (Date.now() - t1)); return q; }
+  }
+  /* Gemini stays OUT of the normal path: its key 403s on the
+     free-tier block every time, so trying 4 models only burns the
+     budget. It runs only when explicitly re-enabled. */
+  if (process.env.GEMINI_API_KEY && process.env.GEMINI_FALLBACK === "1" && Date.now() < deadline) {
+    var t2 = Date.now();
+    var g = await geminiAnswer(site, products, message, process.env.GEMINI_API_KEY, deadline);
+    if (g) { console.log("AI_REPLY provider=gemini ms=" + (Date.now() - t2)); return g; }
   }
   return null; /* no key set — deterministic mode is intended, not a failure */
 }
