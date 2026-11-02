@@ -104,7 +104,11 @@ function sendWhatsApp(to, text) {
       text: { body: String(text).slice(0, 4000) }
     })
   }, 20000).then(function (r) {
-    if (r.status >= 200 && r.status < 300) return true;
+    if (r.status >= 200 && r.status < 300) {
+      var mid = r.json && r.json.messages && r.json.messages[0] ? r.json.messages[0].id : "?";
+      console.log("WHATSAPP_SEND_OK id=" + mid);
+      return true;
+    }
     console.error("WHATSAPP_SEND_FAILED status=" + r.status + " " + String(r.text || "").slice(0, 200));
     return false;
   }).catch(function (e) {

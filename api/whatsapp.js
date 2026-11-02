@@ -95,6 +95,7 @@ module.exports = async function (req, res) {
     var changes = Array.isArray(entries[ei].changes) ? entries[ei].changes : [];
     for (var ci = 0; ci < changes.length; ci++) {
       var value = changes[ci].value || {};
+      console.log("WHATSAPP_EVENT " + JSON.stringify(value).slice(0, 1500));
       var messages = Array.isArray(value.messages) ? value.messages : [];
       for (var mi = 0; mi < messages.length; mi++) {
         var msg = messages[mi];
