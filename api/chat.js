@@ -810,6 +810,66 @@ async function openrouterAttempt(site, products, message, key, model, timeoutMs)
   }
 }
 
+/* Step 4 — precision shield. Every AI reply is checked against the
+   verified data BEFORE it can reach the customer. Returns null when
+   the reply is clean, or a short reason string when it must be
+   blocked (the caller then tries the next provider, and finally the
+   deterministic responder). Checks: (1) every ₹/Rs amount must be a
+   real catalogue price; (2) every link must be on the shop's own
+   domain; (3) every phone-like number must be a verified contact;
+   (4) no promised refunds, approvals or guaranteed delivery;
+   (5) the reply's script must mirror the customer's script. */
+function shieldCheck(site, products, message, reply) {
+  var text = String(reply || "");
+  var isRafa = domainOf(site) === RAFA_DOMAIN;
+
+  var prices = {};
+  products.forEach(function (p) {
+    var n = String(p.price).replace(/[^0-9]/g, "");
+    if (n) prices[n] = true;
+  });
+  var amounts = text.match(/(?:₹|Rs\.?)\s*([0-9][0-9,]*)/g) || [];
+  for (var i = 0; i < amounts.length; i++) {
+    var amt = amounts[i].replace(/[^0-9]/g, "");
+    if (amt && !prices[amt]) return "invented-price-" + amt;
+  }
+
+  var host = "";
+  try { host = new URL(site).hostname.replace(/^www\./, ""); } catch (e) { host = ""; }
+  var urls = text.match(/https?:\/\/[^\s)\]]+/g) || [];
+  for (var j = 0; j < urls.length; j++) {
+    var uh = "";
+    try { uh = new URL(urls[j]).hostname.replace(/^www\./, ""); } catch (e2) { return "bad-link"; }
+    if (host && uh !== host) return "foreign-link-" + uh;
+  }
+
+  var allowedPhones = isRafa
+    ? { "8369845866": true, "08048795138": true, "8048795138": true }
+    : {};
+  var seqs = text.match(/(?:\+?91[\s-]?)?[0-9][0-9\s-]{8,}[0-9]/g) || [];
+  for (var k = 0; k < seqs.length; k++) {
+    var d = seqs[k].replace(/[^0-9]/g, "");
+    if (d.length >= 10 && !allowedPhones[d] && !allowedPhones[d.slice(-10)]) {
+      return "unverified-phone";
+    }
+  }
+
+  if (/refund\s+(milega|will be|ho jayega|kar denge|de denge|mil jayega)/i.test(text) ||
+      /(return|exchange)\s+(approved|ho jayega|confirm)/i.test(text) ||
+      /100%\s*(refund|guarantee|pakka)/i.test(text) ||
+      /guaranteed\s+delivery/i.test(text)) {
+    return "forbidden-promise";
+  }
+
+  var msgDev = /[\u0900-\u097F]/.test(String(message || ""));
+  var repDev = (text.match(/[\u0900-\u097F]/g) || []).length;
+  var repLatin = (text.match(/[a-zA-Z]/g) || []).length;
+  if (!msgDev && repDev > 20 && repDev > repLatin) return "script-mismatch";
+  if (msgDev && repDev === 0 && repLatin > 20) return "script-mismatch";
+
+  return null;
+}
+
 /* Returns { reply, products } from an AI provider, or null when no
    key is set or every provider fails — the caller then uses the
    deterministic responder. Never throws. */
@@ -819,14 +879,24 @@ async function aiAnswer(site, products, message) {
      customer waits. Success is logged as AI_REPLY with the provider
      and elapsed time, so stage timings are visible in Vercel logs. */
   var deadline = Date.now() + AI_TOTAL_BUDGET_MS;
+  /* Step 4: a provider's reply counts only if it passes the shield. */
+  function guard(provider, result) {
+    if (!result) return null;
+    var reason = shieldCheck(site, products, message, result.reply);
+    if (reason) {
+      try { console.error("AI_REPLY_BLOCKED provider=" + provider + " reason=" + reason); } catch (e) { /* best-effort */ }
+      return null;
+    }
+    return result;
+  }
   if (process.env.OPENROUTER_API_KEY) {
     var t0 = Date.now();
-    var o = await openrouterAnswer(site, products, message, process.env.OPENROUTER_API_KEY, deadline);
+    var o = guard("openrouter", await openrouterAnswer(site, products, message, process.env.OPENROUTER_API_KEY, deadline));
     if (o) { console.log("AI_REPLY provider=openrouter ms=" + (Date.now() - t0)); return o; }
   }
   if (process.env.GROQ_API_KEY && Date.now() < deadline) {
     var t1 = Date.now();
-    var q = await groqAnswer(site, products, message, process.env.GROQ_API_KEY);
+    var q = guard("groq", await groqAnswer(site, products, message, process.env.GROQ_API_KEY));
     if (q) { console.log("AI_REPLY provider=groq ms=" + (Date.now() - t1)); return q; }
   }
   /* Gemini stays OUT of the normal path: its key 403s on the
@@ -834,7 +904,7 @@ async function aiAnswer(site, products, message) {
      budget. It runs only when explicitly re-enabled. */
   if (process.env.GEMINI_API_KEY && process.env.GEMINI_FALLBACK === "1" && Date.now() < deadline) {
     var t2 = Date.now();
-    var g = await geminiAnswer(site, products, message, process.env.GEMINI_API_KEY, deadline);
+    var g = guard("gemini", await geminiAnswer(site, products, message, process.env.GEMINI_API_KEY, deadline));
     if (g) { console.log("AI_REPLY provider=gemini ms=" + (Date.now() - t2)); return g; }
   }
   return null; /* no key set — deterministic mode is intended, not a failure */
@@ -914,5 +984,6 @@ module.exports = handler;
 module.exports.handler = handler;
 module.exports._respond = respond;
 module.exports._fastRespond = fastRespond;
+module.exports._shieldCheck = shieldCheck;
 module.exports._buildAiPrompt = buildAiPrompt;
 module.exports._resetCache = function () { CACHE = {}; };
