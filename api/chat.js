@@ -368,6 +368,48 @@ function respond(site, products, rawMessage) {
   var fast = fastRespond(site, products, rawMessage);
   if (fast) return fast;
 
+  /* Step 2b — graceful AI-down fallback for complaints and requests.
+     This runs only when the AI lane has already failed (or is off):
+     the customer still gets the correct flow — apology, order ID,
+     handover marker — instead of the generic menu. No approval, no
+     pickup date and no refund is ever promised here. */
+  /* "nahi aaya" needs a parcel/order context — "pasand nahi aaya"
+     (didn't like it) is a return case, not a delivery complaint. */
+  var nahiAaya = (np.indexOf("nahi aaya") >= 0 || np.indexOf("nahi aya") >= 0 || np.indexOf("nahi aayi") >= 0 ||
+    np.indexOf("nahi mila") >= 0) &&
+    (np.indexOf(" parcel ") >= 0 || np.indexOf(" order ") >= 0 || np.indexOf(" delivery ") >= 0 || np.indexOf(" abhi tak ") >= 0);
+  var isComplaint = nahiAaya || np.indexOf("aane wala tha") >= 0 ||
+    np.indexOf("not delivered") >= 0 ||
+    (np.indexOf(" late ") >= 0 && (np.indexOf(" parcel ") >= 0 || np.indexOf(" order ") >= 0 || np.indexOf(" delivery ") >= 0));
+  if (isComplaint) {
+    return { reply: pick(
+      "I'm really sorry your parcel hasn't arrived yet. Please share your order ID — our team will check it on priority and call you.\n[[HANDOVER: delivery complaint]]",
+      "Bahut maafi chahte hain, aapka parcel abhi tak nahi pahuncha. Please apna order ID share karein — hamari team priority par check karke aapko call karegi.\n[[HANDOVER: delivery complaint]]"
+    ), products: [] };
+  }
+  if (np.indexOf(" damaged ") >= 0 || np.indexOf(" defect") >= 0 || np.indexOf(" wrong item") >= 0 || np.indexOf(" kharab ") >= 0) {
+    return { reply: pick(
+      "I'm sorry the item arrived like that. Please share your order ID and keep the full parcel-opening video ready — our team will take this up on priority and call you.\n[[HANDOVER: delivery complaint]]",
+      "Bahut dukh hai ki item aise halat me pahuncha. Please apna order ID share karein aur pura parcel-opening video ready rakhein — hamari team priority par dekh kar aapko call karegi.\n[[HANDOVER: delivery complaint]]"
+    ), products: [] };
+  }
+  if (np.indexOf(" return ") >= 0 || np.indexOf(" exchange ") >= 0 || np.indexOf(" refund ") >= 0 || np.indexOf("pasand nahi") >= 0) {
+    var retMarker = np.indexOf(" exchange ") >= 0 ? "[[HANDOVER: Exchange]]" : "[[HANDOVER: Return]]";
+    return { reply: pick(
+      "I understand. Please share your order ID and the reason — our team will check it against our policy and get back to you. For a damaged, defective or wrong item, please keep the full parcel-opening video ready.\n" + retMarker,
+      "Samajh gaya. Please apna order ID aur wajah share karein — hamari team policy ke hisaab se check karke aapko batayegi. Damaged, defective ya wrong item ke liye pura parcel-opening video ready rakhein.\n" + retMarker
+    ), products: [] };
+  }
+  if (np.indexOf(" call kar") >= 0 || np.indexOf(" baat karni") >= 0 || np.indexOf(" call me") >= 0) {
+    return { reply: isRafa ? pick(
+      "Of course — you can call our team on 08048795138, or share your order ID here and the team will call you.\n[[HANDOVER: Call requested]]",
+      "Bilkul — team ko 08048795138 par call kar sakte hain, ya apna order ID yahin share karein, team aapko call karegi.\n[[HANDOVER: Call requested]]"
+    ) : pick(
+      "Of course — please share your order ID here and the team will call you.\n[[HANDOVER: Call requested]]",
+      "Bilkul — apna order ID yahin share karein, team aapko call karegi.\n[[HANDOVER: Call requested]]"
+    ), products: [] };
+  }
+
   /* COD / shipping — policy text only where verified (Rafa); else honest */
   if (np.indexOf(" cod ") >= 0 || np.indexOf(" cash on delivery ") >= 0) {
     if (isRafa) {
